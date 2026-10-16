@@ -104,6 +104,7 @@ const titleInput = $('#title');
 const ctxMenu = $('#ctxmenu');
 const issuesBtn = $('#issues-btn');
 const themeBtn = $('#theme-btn');
+const dialog = $('#dialog');
 
 const styleEl = document.createElementNS(SVGNS, 'style');
 styleEl.textContent = DIAGRAM_CSS;
@@ -226,6 +227,61 @@ function toggleTheme() {
   setPref('theme', effectiveTheme() === 'dark' ? 'light' : 'dark');
 }
 systemDark.addEventListener('change', applyPrefs);
+
+/* ================= Versionsverlauf ================= */
+
+const CHANGELOG = Array.isArray(window.ER_CHANGELOG) ? window.ER_CHANGELOG : [];
+const APP_VERSION = CHANGELOG.length ? CHANGELOG[0].version : '';
+const LAST_VERSION_WITHOUT_CHANGELOG = '1.1.1';
+
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
+
+const escapeHTML = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+function formatDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Ohne Angabe der ganze Verlauf, sonst nur was seit „since“ neu ist
+function showChangelog(since) {
+  const entries = since ? CHANGELOG.filter(e => compareVersions(e.version, since) > 0) : CHANGELOG;
+  $('#dialog-title').textContent = since ? `Neu in Version ${APP_VERSION}` : 'Versionsverlauf';
+  $('#dialog-body').innerHTML = entries.map(e => `
+    <section>
+      <h3><span${e.version === APP_VERSION ? ' class="current"' : ''}>Version ${escapeHTML(e.version)}</span><small>${formatDate(e.date)}</small></h3>
+      <ul>${e.changes.map(c => `<li>${escapeHTML(c)}</li>`).join('')}</ul>
+    </section>`).join('') +
+    (since ? '<div class="more"><button class="link" data-all>Ganzen Versionsverlauf anzeigen</button></div>' : '');
+  closeMenu();
+  endEdit(false);
+  dialog.hidden = false;
+  $('[data-close]', dialog).focus();
+}
+
+function closeDialog() {
+  dialog.hidden = true;
+}
+
+dialog.addEventListener('click', ev => {
+  if (ev.target === dialog || ev.target.closest('[data-close]')) closeDialog();
+  else if (ev.target.closest('[data-all]')) showChangelog();
+});
+
+// Nach einem Update einmal zeigen, was neu ist (nicht bei der ersten Nutzung)
+function checkWhatsNew(usedBefore) {
+  if (!APP_VERSION) return;
+  const seen = prefs.seenVersion || (usedBefore ? LAST_VERSION_WITHOUT_CHANGELOG : APP_VERSION);
+  if (compareVersions(APP_VERSION, seen) > 0) showChangelog(seen);
+  if (prefs.seenVersion !== APP_VERSION) {
+    prefs.seenVersion = APP_VERSION;
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* egal */ }
+  }
+}
 
 /* ================= Geometrie ================= */
 
@@ -1432,6 +1488,10 @@ window.addEventListener('resize', closeMenu);
 /* ================= Tastatur ================= */
 
 document.addEventListener('keydown', ev => {
+  if (!dialog.hidden) {
+    if (ev.key === 'Escape') { ev.preventDefault(); closeDialog(); }
+    return;
+  }
   if (isTextField(ev.target)) return;
   const mod = ev.metaKey || ev.ctrlKey;
   const key = ev.key.toLowerCase();
@@ -1510,6 +1570,7 @@ const HELP_HTML = `
       <li>Ansicht ziehen <kbd>Leertaste</kbd></li>
       <li>Zoomen <kbd>${MOD} Scroll</kbd></li>
     </ul>
+    <p class="version-line">Version ${escapeHTML(APP_VERSION)} · <button class="link" data-action="changelog">Neuigkeiten</button></p>
   </div>`;
 
 let panelBefore = null;
@@ -1631,6 +1692,7 @@ panel.addEventListener('click', ev => {
   if (!btn) return;
   const action = btn.dataset.action;
   if (action === 'delete') { deleteSelected(); return; }
+  if (action === 'changelog') { showChangelog(); return; }
   if (action === 'duplicate') { duplicateSelection(); return; }
   if (action === 'align-h') { alignSelection('h'); return; }
   if (action === 'align-v') { alignSelection('v'); return; }
@@ -1849,6 +1911,7 @@ window.ERBridge = {
       exportSVG,
       exportPNG,
       nextIssue,
+      changelog: () => showChangelog(),
       themeAuto: () => setPref('theme', 'auto'),
       themeLight: () => setPref('theme', 'light'),
       themeDark: () => setPref('theme', 'dark'),
@@ -1887,6 +1950,8 @@ function sampleDiagram() {
 }
 
 function init() {
+  let usedBefore = false;
+  try { usedBefore = [PREFS_KEY, STORE_KEY].some(k => localStorage.getItem(k) != null); } catch { /* egal */ }
   loadPrefs();
   applyPrefs();
   if (NATIVE) document.documentElement.classList.add('native');
@@ -1911,6 +1976,7 @@ function init() {
   } else {
     fit();
   }
+  checkWhatsNew(usedBefore);
 }
 
 init();

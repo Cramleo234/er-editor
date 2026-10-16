@@ -14,6 +14,8 @@ brew install --cask cramleo234/public/er-editor
 
 Die App ist nicht von Apple notarisiert. Beim ersten Start unter **Systemeinstellungen → Datenschutz & Sicherheit** auf **Trotzdem öffnen** klicken.
 
+Was sich in welcher Version geändert hat: [Versionsverlauf](CHANGELOG.md). Nach einem Update zeigt die App die Neuerungen einmal an; jederzeit über **Neuigkeiten** im Hilfe-Panel bzw. **ER-Editor → Neuigkeiten …** in der Mac-App.
+
 ## Funktionen
 
 - **Entity** (Rechteck), **Beziehung** (Raute), **Attribut** (Ellipse) und **Schlüsselattribut** (unterstrichen)
@@ -76,11 +78,13 @@ und http://localhost:8000 aufrufen.
 macos/build.sh
 ```
 
-Erzeugt `build/ER-Editor.app` und `build/ER-Editor-<Version>.dmg` (Version aus `VERSION`). Die App ist eine dokumentbasierte Hülle (NSDocument + WKWebView) um dieselben Web-Dateien und läuft offline.
+Erzeugt `build/ER-Editor.app` und `build/ER-Editor-<Version>.dmg` (Version aus `VERSION`). Vorher den neuen Eintrag in `changelog.js` ergänzen – das Skript bricht ab, wenn die neueste Version dort nicht zu `VERSION` passt, und erzeugt daraus `CHANGELOG.md`. Die App ist eine dokumentbasierte Hülle (NSDocument + WKWebView) um dieselben Web-Dateien und läuft offline.
 
 ## Dateien
 
 - `index.html` – Oberfläche
 - `style.css` – Gestaltung
 - `app.js` – Editor-Logik (Vanilla JavaScript, SVG)
+- `changelog.js` – Versionsverlauf (Quelle für das Neuigkeiten-Fenster und `CHANGELOG.md`)
+- `tools/changelog.py` – erzeugt `CHANGELOG.md`
 - `macos/` – Mac-App (Swift), Icon und Build-Skript

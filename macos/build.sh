@@ -5,6 +5,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 VERSION="$(cat VERSION)"
+
+# Versionsverlauf muss zur Version passen; CHANGELOG.md wird daraus erzeugt
+python3 tools/changelog.py --check "$VERSION"
 BUILD=build
 APP="$BUILD/ER-Editor.app"
 
@@ -20,7 +23,7 @@ lipo -create "$BUILD"/obj/ER-Editor-* -output "$APP/Contents/MacOS/ER-Editor"
 # Web-App und Info.plist
 # Versionskennung der Web-Dateien (gegen gemischte Browser-Caches) an VERSION angleichen
 sed -i '' -E "s/\?v=[0-9A-Za-z.-]+/?v=$VERSION/g" index.html
-cp index.html style.css app.js "$APP/Contents/Resources/web/"
+cp index.html style.css app.js changelog.js "$APP/Contents/Resources/web/"
 sed "s/__VERSION__/$VERSION/g" macos/Info.plist > "$APP/Contents/Info.plist"
 
 # Icon

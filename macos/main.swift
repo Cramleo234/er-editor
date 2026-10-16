@@ -200,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         main.addItem(submenu("ER-Editor", [
             item("Über ER-Editor", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            web("Neuigkeiten …", "changelog"),
             .separator(),
             item("ER-Editor ausblenden", #selector(NSApplication.hide(_:)), "h"),
             item("Andere ausblenden", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
