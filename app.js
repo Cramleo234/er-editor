@@ -9,7 +9,16 @@ const NAME_FONT = `500 14px ${FONT_STACK}`;
 const LABEL_FONT = `600 13px ${FONT_STACK}`;
 
 const TYPES = { entity: 'Entity', relationship: 'Beziehung', attribute: 'Attribut' };
-const LABEL_PRESETS = ['1', 'N', 'M', '0..1', '1..*', '0..*', '(1,1)', '(0,n)'];
+const LABEL_PRESETS = ['1', 'N', 'M', '(0,1)', '(1,1)', '(0,n)', '(1,n)'];
+
+// Min-Max-Angaben einheitlich als (min,max): "0..1", "1..*", "1,n", "( 0 ; N )" -> "(0,1)", "(1,n)", "(0,n)"
+const MINMAX = /^\s*\(?\s*(\d+|[a-z*])\s*(?:,|;|\.\.)\s*(\d+|[a-z*])\s*\)?\s*$/i;
+function normalizeLabel(label) {
+  const m = MINMAX.exec(label || '');
+  if (!m) return (label || '').trim();
+  const part = v => (v === '*' ? 'n' : v.toLowerCase());
+  return `(${part(m[1])},${part(m[2])})`;
+}
 
 const FLAGS = {
   entity: [['weak', 'Schwache Entity', 'Doppelter Rahmen']],
@@ -400,7 +409,7 @@ function startEdit(kind, id) {
   if (!obj) return;
   editing = { kind, id, before: snapshot(), t: performance.now() };
   inline.value = kind === 'node' ? obj.name : (obj.label || '');
-  inline.placeholder = kind === 'node' ? 'Name' : 'Beschriftung, z. B. 1 oder N';
+  inline.placeholder = kind === 'node' ? 'Name' : 'z. B. 1, N oder (0,n)';
   inline.hidden = false;
   positionInline();
   inline.focus();
@@ -435,8 +444,13 @@ function endEdit(cancel) {
   const e = editing;
   editing = null;
   inline.hidden = true;
-  if (cancel) state = JSON.parse(e.before);
-  else commit(e.before);
+  if (cancel) {
+    state = JSON.parse(e.before);
+  } else {
+    const edge = e.kind === 'edge' && edgeById(e.id);
+    if (edge) edge.label = normalizeLabel(edge.label);
+    commit(e.before);
+  }
   render();
   renderPanel();
 }
@@ -775,7 +789,7 @@ function renderPanel() {
   } else {
     panel.innerHTML = `
       <h2>Kante</h2>
-      <label class="field"><span>Beschriftung</span><input type="text" data-text="label" autocomplete="off" placeholder="z. B. 1, N, (0,n)"></label>
+      <label class="field"><span>Beschriftung</span><input type="text" data-text="label" autocomplete="off" placeholder="z. B. 1, N oder (0,n)"></label>
       <div class="presets">
         ${LABEL_PRESETS.map(l => `<button data-preset="${l}" aria-pressed="${obj.label === l}">${l}</button>`).join('')}
         <button data-preset="" title="Beschriftung entfernen">✕</button>
@@ -796,7 +810,15 @@ panel.addEventListener('focusin', ev => {
   if (ev.target.matches('[data-text]')) panelBefore = snapshot();
 });
 panel.addEventListener('focusout', ev => {
-  if (ev.target.matches('[data-text]') && panelBefore) { commit(panelBefore); panelBefore = null; }
+  if (!ev.target.matches('[data-text]') || !panelBefore) return;
+  const obj = findSelected();
+  if (obj && ev.target.dataset.text === 'label') {
+    obj.label = normalizeLabel(obj.label);
+    render();
+    renderPanel();
+  }
+  commit(panelBefore);
+  panelBefore = null;
 });
 panel.addEventListener('input', ev => {
   const obj = findSelected();
@@ -876,7 +898,7 @@ function loadData(data) {
   const ids = new Set(nodes.map(n => n.id));
   const edges = data.edges
     .filter(e => e && Number.isFinite(e.id) && ids.has(e.from) && ids.has(e.to))
-    .map(e => ({ ...e, label: String(e.label ?? '') }));
+    .map(e => ({ ...e, label: normalizeLabel(String(e.label ?? '')) }));
   return { title: String(data.title || 'Unbenanntes Diagramm'), nodes, edges };
 }
 

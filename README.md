@@ -17,7 +17,7 @@ Die App ist nicht von Apple notarisiert. Beim ersten Start unter **Systemeinstel
 ## Funktionen
 
 - **Entity** (Rechteck), **Beziehung** (Raute), **Attribut** (Ellipse) und **Schlüsselattribut** (unterstrichen)
-- **Beschriftbare Kanten** – frei oder per Schnellauswahl (`1`, `N`, `M`, `0..1`, `1..*`, `(0,n)` …)
+- **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,n)`, `(1,n)`). Min-Max-Eingaben wie `0..1`, `1..*` oder `1,n` werden automatisch einheitlich als `(min,max)` geschrieben.
 - Varianten: schwache Entity, identifizierende Beziehung, partieller Schlüssel, mehrwertiges und abgeleitetes Attribut, totale Teilnahme (Doppellinie)
 - Attribute werden automatisch mit dem ausgewählten Element verbunden
 - Werkzeuge bleiben nach dem Platzieren aktiv – mehrere Entities oder Kanten am Stück
