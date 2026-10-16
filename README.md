@@ -17,28 +17,48 @@ Die App ist nicht von Apple notarisiert. Beim ersten Start unter **Systemeinstel
 ## Funktionen
 
 - **Entity** (Rechteck), **Beziehung** (Raute), **Attribut** (Ellipse) und **Schlüsselattribut** (unterstrichen)
-- **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,n)`, `(1,n)`). Min-Max-Eingaben wie `0..1`, `1..*` oder `1,n` werden automatisch einheitlich als `(min,max)` geschrieben.
+- **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,n)`, `(1,n)`). Eingaben wie `0..1`, `1..*` oder `1,n` werden einheitlich als `(min,max)` geschrieben. Kardinalitäten stehen an der Entity und lassen sich entlang der Kante verschieben.
 - Varianten: schwache Entity, identifizierende Beziehung, partieller Schlüssel, mehrwertiges und abgeleitetes Attribut, totale Teilnahme (Doppellinie)
-- Attribute werden automatisch mit dem ausgewählten Element verbunden
-- Werkzeuge bleiben nach dem Platzieren aktiv – mehrere Entities oder Kanten am Stück
-- Rahmen-Auswahl für mehrere Elemente: gemeinsam löschen oder verschieben
-- Rückgängig/Wiederholen, Zoomen, Verschieben, Alles einpassen
-- Automatisches Speichern im Browser, Speichern/Öffnen als JSON
-- Export als **SVG** und **PNG**
+- **Anfasser zum Verbinden:** Über einem Element erscheinen vier Anfasser. Ziehen auf ein anderes Element verbindet, Ziehen ins Leere legt direkt das passende Gegenstück an (Entity → Beziehung, Beziehung → Entity, Attribut → Teilattribut).
+- **Schnell-Hinzufügen** am Element: `+ Attribut`, `+ Schlüssel`, `+ Beziehung` bzw. `+ Entity` – neu, verbunden und an freier Stelle platziert
+- **Attribute anordnen:** verteilt alle Attribute eines Elements im Bogen auf der Seite ohne Beziehungen
+- **Rechtsklick-Menü** für Fläche, Element, Kante und Mehrfachauswahl (inkl. Ausrichten und Verteilen)
+- **Kopieren, Ausschneiden, Einsetzen, Duplizieren** – auch zwischen mehreren Fenstern
+- **Einrasten am Raster** und **Hilfslinien** beim Ausrichten an anderen Elementen (`⌥`/`Alt` hält das Einrasten an)
+- **Hinweise im Diagramm**, z. B. Entity ohne Schlüssel oder Beziehung mit nur einer Entity – der Warnknopf springt zum nächsten
+- **Helles und dunkles Design** (automatisch nach System oder fest eingestellt)
+- Werkzeuge bleiben nach dem Platzieren aktiv, Rahmen-Auswahl, Rückgängig/Wiederholen, Zoomen
+- Export als **SVG** und **PNG** (immer hell)
 
 ## Bedienung
 
 | Aktion | So geht's |
 | --- | --- |
-| Element platzieren | Werkzeug wählen (`E`, `R`, `A`, `K`), auf die Fläche klicken – das Werkzeug bleibt aktiv, `Esc` oder `V` führt zurück zur Auswahl; mit `⇧` ohne Benennen |
+| Entity anlegen | Doppelklick auf eine leere Stelle |
+| Element platzieren | Werkzeug wählen (`E`, `R`, `A`, `K`), auf die Fläche klicken – das Werkzeug bleibt aktiv, `Esc` oder `V` führt zurück; mit `⇧` ohne Benennen |
+| Verbinden | Anfasser eines Elements ziehen – oder Werkzeug **Kante** (`C`) |
 | Umbenennen / Kante beschriften | Doppelklick oder `Enter` |
-| Verbinden | Werkzeug **Kante** (`C`): Quelle und Ziel anklicken oder von Element zu Element ziehen |
+| Kardinalität verschieben | Beschriftung entlang der Kante ziehen |
+| Menü | Rechtsklick (Mac: auch `Ctrl` + Klick) |
 | Mehrere auswählen | Rahmen auf dem Hintergrund ziehen, `⇧` + Klick ergänzt, `⌘`/`Strg` + `A` wählt alles |
-| Verschieben | Element ziehen (bei Mehrfachauswahl alle gemeinsam), Feinjustierung mit Pfeiltasten |
+| Kopieren / Einsetzen / Duplizieren | `⌘`/`Strg` + `C` / `V` / `D` |
+| Verschieben | Element ziehen (bei Mehrfachauswahl alle gemeinsam), Pfeiltasten zur Feinjustierung |
 | Ansicht verschieben | Scrollen oder Leertaste + Ziehen |
 | Zoomen | `⌘`/`Strg` + Scrollen, `+` / `-`, `F` passt alles ein |
 | Löschen | `Entf` / `Backspace` |
 | Rückgängig | `⌘`/`Strg` + `Z`, Wiederholen mit `⇧` |
+
+Im Browser speichert der Editor automatisch; mit **Speichern** / **Öffnen** werden Diagramme als JSON-Datei gesichert und geladen.
+
+## Mac-App
+
+Die Mac-App arbeitet mit echten Dokumenten:
+
+- Jedes Diagramm ist eine **`.erd`-Datei** in einem eigenen Fenster; Doppelklick im Finder öffnet sie.
+- Menü **Ablage**: Neu, Öffnen, Zuletzt benutzt, Sichern, Duplizieren, Umbenennen, Bewegen, Zurücksetzen, Export als SVG/PNG
+- Änderungen werden wie bei Pages automatisch gesichert; ungesicherte Dokumente sind im Fenstertitel markiert.
+- `.json`-Dateien aus der Browser-Version lassen sich ebenfalls öffnen (auch über „Öffnen mit“).
+- Ein in früheren Versionen automatisch gespeichertes Diagramm wird beim ersten Start einmalig als neues Dokument übernommen.
 
 ## Lokal starten
 
@@ -56,7 +76,7 @@ und http://localhost:8000 aufrufen.
 macos/build.sh
 ```
 
-Erzeugt `build/ER-Editor.app` und `build/ER-Editor-<Version>.dmg` (Version aus `VERSION`). Die App ist eine schlanke WKWebView-Hülle um dieselben Web-Dateien und läuft offline.
+Erzeugt `build/ER-Editor.app` und `build/ER-Editor-<Version>.dmg` (Version aus `VERSION`). Die App ist eine dokumentbasierte Hülle (NSDocument + WKWebView) um dieselben Web-Dateien und läuft offline.
 
 ## Dateien
 

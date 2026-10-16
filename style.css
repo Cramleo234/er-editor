@@ -1,16 +1,113 @@
+/* ---------- Farben (hell / dunkel) ---------- */
+
 :root {
   --bg: #f4f5f8;
   --surface: #ffffff;
   --border: #e1e4ea;
+  --border-strong: #c9ced8;
   --text: #1f2430;
   --muted: #667085;
   --hover: #e8eaf0;
   --accent: #6741d9;
   --accent-soft: #f1ecff;
   --danger: #c92a2a;
+  --danger-border: #f1c4c4;
+  --danger-soft: #fff1f1;
+  --warn: #e67700;
+  --warn-soft: #fff4e6;
   --paper: #fbfbfc;
   --dot: #d3d7df;
+  --guide: #e64980;
+  --shadow: 0 10px 30px rgba(15, 20, 35, .16);
+
+  /* Diagramm (siehe DIAGRAM_CSS in app.js) */
+  --d-text: #1f2430;
+  --d-entity-fill: #e8efff;
+  --d-entity-stroke: #3355c4;
+  --d-rel-fill: #fff2dc;
+  --d-rel-stroke: #c97a1c;
+  --d-attr-fill: #ffffff;
+  --d-attr-stroke: #5b6475;
+  --d-key-fill: #effaf2;
+  --d-key-stroke: #2f8a4b;
+  --d-edge: #4a5263;
+  --d-label-bg: #ffffff;
+  --d-label-border: #c9ced8;
+  --d-accent: #6741d9;
+
   color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171c;
+    --surface: #1e2127;
+    --border: #2f333b;
+    --border-strong: #454a55;
+    --text: #e6e8ee;
+    --muted: #9aa1ad;
+    --hover: #2a2e36;
+    --accent: #9b80ff;
+    --accent-soft: #2c2547;
+    --danger: #ff7b7b;
+    --danger-border: #5c2a2a;
+    --danger-soft: #3a1f1f;
+    --warn: #ffa94d;
+    --warn-soft: #3a2a14;
+    --paper: #181a1f;
+    --dot: #31353d;
+    --guide: #f783ac;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    --d-text: #e6e8ee;
+    --d-entity-fill: #1d2a4d;
+    --d-entity-stroke: #7d9bff;
+    --d-rel-fill: #3a2b12;
+    --d-rel-stroke: #f0a547;
+    --d-attr-fill: #22252c;
+    --d-attr-stroke: #9aa3b5;
+    --d-key-fill: #15321f;
+    --d-key-stroke: #5cc483;
+    --d-edge: #9aa3b5;
+    --d-label-bg: #22252c;
+    --d-label-border: #454a55;
+    --d-accent: #9b80ff;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #15171c;
+  --surface: #1e2127;
+  --border: #2f333b;
+  --border-strong: #454a55;
+  --text: #e6e8ee;
+  --muted: #9aa1ad;
+  --hover: #2a2e36;
+  --accent: #9b80ff;
+  --accent-soft: #2c2547;
+  --danger: #ff7b7b;
+  --danger-border: #5c2a2a;
+  --danger-soft: #3a1f1f;
+  --warn: #ffa94d;
+  --warn-soft: #3a2a14;
+  --paper: #181a1f;
+  --dot: #31353d;
+  --guide: #f783ac;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  --d-text: #e6e8ee;
+  --d-entity-fill: #1d2a4d;
+  --d-entity-stroke: #7d9bff;
+  --d-rel-fill: #3a2b12;
+  --d-rel-stroke: #f0a547;
+  --d-attr-fill: #22252c;
+  --d-attr-stroke: #9aa3b5;
+  --d-key-fill: #15321f;
+  --d-key-stroke: #5cc483;
+  --d-edge: #9aa3b5;
+  --d-label-bg: #22252c;
+  --d-label-border: #454a55;
+  --d-accent: #9b80ff;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -87,6 +184,10 @@ button[aria-pressed="true"] {
   box-shadow: inset 0 0 0 1.5px var(--accent), 0 1px 2px rgba(0, 0, 0, .06);
 }
 
+#issues-btn.has-issues { color: var(--warn); }
+#issues-btn.has-issues:hover { background: var(--warn-soft); }
+#issues-count { font-variant-numeric: tabular-nums; }
+
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- Stage ---------- */
@@ -112,9 +213,10 @@ main { flex: 1; display: flex; min-height: 0; }
 #canvas[data-tool="connect"] .node { cursor: pointer; }
 #canvas[data-tool="select"] .node { cursor: move; }
 #canvas .edge { cursor: pointer; }
+#canvas .label-group { cursor: ew-resize; }
 #canvas.panning { cursor: grabbing; }
 
-#rubber { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 4; pointer-events: none; }
+#rubber { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 4; pointer-events: none; vector-effect: non-scaling-stroke; }
 #marquee {
   fill: rgba(103, 65, 217, .07);
   stroke: var(--accent);
@@ -124,6 +226,26 @@ main { flex: 1; display: flex; min-height: 0; }
   pointer-events: none;
 }
 
+.guide { stroke: var(--guide); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+
+/* Anfasser und Schnell-Hinzufügen */
+.overlay { pointer-events: none; }
+.handle, .quick { pointer-events: all; }
+.handle { cursor: crosshair; }
+.handle-hit { fill: transparent; }
+.handle-dot { fill: var(--surface); stroke: var(--accent); stroke-width: 1.6; transition: r .1s; }
+.handle:hover .handle-dot { fill: var(--accent); r: 6px; }
+.quick { cursor: pointer; }
+.quick rect { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .08)); }
+.quick:hover rect { fill: var(--accent-soft); stroke: var(--accent); }
+.quick text { font: 600 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--text); }
+.quick:hover text { fill: var(--accent); }
+
+/* Hinweise am Element */
+.badge { pointer-events: none; }
+.badge circle { fill: var(--warn); stroke: var(--paper); stroke-width: 2; }
+.badge text { font: 800 11px system-ui, -apple-system, sans-serif; fill: #fff; }
+
 .hint {
   position: absolute;
   left: 12px;
@@ -132,9 +254,10 @@ main { flex: 1; display: flex; min-height: 0; }
   padding: 6px 10px;
   font-size: 13px;
   color: var(--muted);
-  background: rgba(255, 255, 255, .94);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+  opacity: .96;
   pointer-events: none;
 }
 
@@ -160,13 +283,43 @@ main { flex: 1; display: flex; min-height: 0; }
   padding: 5px 8px;
   font-weight: 500;
   text-align: center;
-  background: #fff;
+  color: var(--text);
+  background: var(--surface);
   border: 2px solid var(--accent);
   border-radius: 6px;
   outline: none;
   transform: translate(-50%, -50%);
   box-shadow: 0 4px 14px rgba(103, 65, 217, .18);
 }
+
+/* ---------- Kontextmenü ---------- */
+
+.ctxmenu {
+  outline: none;
+  position: fixed;
+  z-index: 20;
+  min-width: 240px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.ctxmenu button {
+  width: 100%;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.ctxmenu button:not(:disabled):hover,
+.ctxmenu button:focus-visible { color: #fff; background: var(--accent); outline: none; }
+.ctxmenu .danger-item { color: var(--danger); }
+.ctxmenu kbd { padding: 0; font-weight: 500; color: var(--muted); background: none; border: 0; }
+.ctxmenu button:not(:disabled):hover kbd,
+.ctxmenu button:focus-visible kbd { color: rgba(255, 255, 255, .8); }
+.ctxmenu .mark { display: inline-block; width: 16px; }
+.ctxmenu .sep { height: 1px; margin: 4px 6px; background: var(--border); }
 
 /* ---------- Panel ---------- */
 
@@ -199,14 +352,23 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
-.presets { display: flex; flex-wrap: wrap; gap: 4px; margin: -4px 0 14px; }
-.presets button {
+.presets, .actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.presets { margin: -4px 0 14px; }
+.presets button, .actions button {
   padding: 3px 8px;
   font-size: 13px;
   font-weight: 600;
   border: 1px solid var(--border);
 }
+.actions button { font-weight: 500; }
 .presets button[aria-pressed="true"] { box-shadow: none; border-color: var(--accent); background: var(--accent-soft); }
+
+.wide {
+  width: 100%;
+  justify-content: center;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+}
 
 .check {
   display: flex;
@@ -227,16 +389,27 @@ main { flex: 1; display: flex; min-height: 0; }
   border-radius: 6px;
 }
 
+.issues {
+  margin: 0 0 14px;
+  padding: 8px 10px 8px 26px;
+  font-size: 13px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: 6px;
+}
+.issues li + li { margin-top: 2px; }
+
 .danger {
   width: 100%;
   justify-content: center;
   margin-top: 6px;
   color: var(--danger);
-  border: 1px solid #f1c4c4;
+  border: 1px solid var(--danger-border);
 }
-.danger:hover { background: #fff1f1; }
+.danger:hover { background: var(--danger-soft); }
 
 .help p { margin: 0 0 10px; color: var(--muted); }
+.help b { color: var(--text); font-weight: 600; }
 .help ul { margin: 0 0 16px; padding: 0; list-style: none; }
 .help li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
 .help li:last-child { border-bottom: 0; }

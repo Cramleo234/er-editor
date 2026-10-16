@@ -46,6 +46,9 @@
       <button data-cmd="delete" title="Auswahl löschen (Entf)">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>
+      <button data-cmd="issues" id="issues-btn" title="Keine Hinweise">
+        <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg><span class="always" id="issues-count">0</span>
+      </button>
     </div>
 
     <div class="spacer"></div>
@@ -54,14 +57,15 @@
       <button data-cmd="new" title="Neues Diagramm">
         <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg><span>Neu</span>
       </button>
-      <button data-cmd="open" title="JSON-Datei öffnen">
+      <button data-cmd="open" title="Diagramm öffnen (⌘/Strg+O)">
         <svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span>Öffnen</span>
       </button>
-      <button data-cmd="save" title="Als JSON speichern (⌘/Strg+S)">
+      <button data-cmd="save" title="Speichern (⌘/Strg+S)">
         <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Speichern</span>
       </button>
       <button data-cmd="svg" title="Als SVG exportieren"><span class="always">SVG</span></button>
       <button data-cmd="png" title="Als PNG exportieren"><span class="always">PNG</span></button>
+      <button data-cmd="theme" id="theme-btn" title="Darstellung"></button>
     </div>
   </header>
 
@@ -72,7 +76,10 @@
           <g id="edges"></g>
           <line id="rubber" x1="0" y1="0" x2="0" y2="0" visibility="hidden"/>
           <g id="nodes"></g>
+          <g id="badges"></g>
+          <g id="guides"></g>
           <rect id="marquee" x="0" y="0" width="0" height="0" visibility="hidden"/>
+          <g id="overlay"></g>
         </g>
       </svg>
       <div id="hint" class="hint"></div>
@@ -89,7 +96,8 @@
   </main>
 
   <input id="inline" type="text" hidden autocomplete="off" aria-label="Beschriftung bearbeiten">
-  <input id="file" type="file" accept=".json,application/json" hidden>
+  <input id="file" type="file" accept=".json,.erd,application/json" hidden>
+  <div id="ctxmenu" class="ctxmenu" role="menu" tabindex="-1" hidden></div>
 
   <script src="app.js"></script>
 </body>

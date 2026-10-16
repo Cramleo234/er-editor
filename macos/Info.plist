@@ -15,5 +15,34 @@
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>MIT-Lizenz</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>ER-Diagramm</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Owner</string>
+      <key>LSItemContentTypes</key><array><string>local.private.er-editor.diagram</string></array>
+      <key>NSDocumentClass</key><string>ERDocument</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>JSON-Diagramm</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key><array><string>public.json</string></array>
+      <key>NSDocumentClass</key><string>ERDocument</string>
+    </dict>
+  </array>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>local.private.er-editor.diagram</string>
+      <key>UTTypeDescription</key><string>ER-Diagramm</string>
+      <key>UTTypeConformsTo</key><array><string>public.json</string><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>erd</string></array>
+      </dict>
+    </dict>
+  </array>
 </dict>
 </plist>

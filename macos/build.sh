@@ -13,7 +13,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/web" "$BUILD/obj"
 
 # Programm
 for arch in arm64 x86_64; do
-  xcrun swiftc -O -target "$arch-apple-macos12.0" macos/main.swift -o "$BUILD/obj/ER-Editor-$arch"
+  xcrun swiftc -O -module-name EREditor -target "$arch-apple-macos12.0" macos/main.swift -o "$BUILD/obj/ER-Editor-$arch"
 done
 lipo -create "$BUILD"/obj/ER-Editor-* -output "$APP/Contents/MacOS/ER-Editor"
 
