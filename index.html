@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ER-Editor</title>
+  <meta name="description" content="Kleiner ER-Diagramm-Editor im Browser (Chen-Notation)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12,2 22,12 12,22 2,12' fill='%23fff2dc' stroke='%23c97a1c' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,3 21,12 12,21 3,12"/></svg>
+      <input id="title" class="title-input" type="text" value="Unbenanntes Diagramm" aria-label="Diagrammtitel" autocomplete="off">
+    </div>
+
+    <div class="group" role="toolbar" aria-label="Werkzeuge">
+      <button data-tool="select" title="Auswählen &amp; Verschieben (V)">
+        <svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1L10 19z"/></svg><span>Auswahl</span>
+      </button>
+      <button data-tool="entity" title="Entity (E)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="1"/></svg><span>Entity</span>
+      </button>
+      <button data-tool="relationship" title="Beziehung (R)">
+        <svg viewBox="0 0 24 24"><polygon points="12,4 22,12 12,20 2,12"/></svg><span>Beziehung</span>
+      </button>
+      <button data-tool="attribute" title="Attribut (A)">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg><span>Attribut</span>
+      </button>
+      <button data-tool="key" title="Schlüsselattribut (K)">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="6"/><line x1="8" y1="14" x2="16" y2="14"/></svg><span>Schlüssel</span>
+      </button>
+      <button data-tool="connect" title="Kante verbinden (C)">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/></svg><span>Kante</span>
+      </button>
+    </div>
+
+    <div class="group" aria-label="Bearbeiten">
+      <button data-cmd="undo" title="Rückgängig (⌘/Strg+Z)">
+        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+      </button>
+      <button data-cmd="redo" title="Wiederholen (⇧⌘/Strg+Y)">
+        <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>
+      </button>
+      <button data-cmd="delete" title="Auswahl löschen (Entf)">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="group" aria-label="Datei">
+      <button data-cmd="new" title="Neues Diagramm">
+        <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg><span>Neu</span>
+      </button>
+      <button data-cmd="open" title="JSON-Datei öffnen">
+        <svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span>Öffnen</span>
+      </button>
+      <button data-cmd="save" title="Als JSON speichern (⌘/Strg+S)">
+        <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Speichern</span>
+      </button>
+      <button data-cmd="svg" title="Als SVG exportieren"><span class="always">SVG</span></button>
+      <button data-cmd="png" title="Als PNG exportieren"><span class="always">PNG</span></button>
+    </div>
+  </header>
+
+  <main>
+    <div class="stage">
+      <svg id="canvas" data-tool="select" aria-label="Zeichenfläche">
+        <g id="viewport">
+          <g id="edges"></g>
+          <line id="rubber" x1="0" y1="0" x2="0" y2="0" visibility="hidden"/>
+          <g id="nodes"></g>
+        </g>
+      </svg>
+      <div id="hint" class="hint"></div>
+      <div class="zoom">
+        <button data-cmd="zoom-out" title="Verkleinern">−</button>
+        <button data-cmd="zoom-reset" id="zoom-label" title="Auf 100 % setzen">100 %</button>
+        <button data-cmd="zoom-in" title="Vergrößern">+</button>
+        <button data-cmd="fit" title="Alles einpassen">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+      </div>
+    </div>
+    <aside id="panel" aria-label="Eigenschaften"></aside>
+  </main>
+
+  <input id="inline" type="text" hidden autocomplete="off" aria-label="Beschriftung bearbeiten">
+  <input id="file" type="file" accept=".json,application/json" hidden>
+
+  <script src="app.js"></script>
+</body>
+</html>
