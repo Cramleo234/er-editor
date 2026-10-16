@@ -24,11 +24,11 @@ const FLAGS = {
 };
 
 const HINTS = {
-  select: 'Ziehen zum Verschieben · Doppelklick zum Umbenennen · Hintergrund ziehen verschiebt die Ansicht',
-  entity: 'Klicke auf die Fläche, um eine Entity zu platzieren (⇧ hält das Werkzeug)',
-  relationship: 'Klicke auf die Fläche, um eine Beziehung zu platzieren (⇧ hält das Werkzeug)',
-  attribute: 'Klicke auf die Fläche – ist ein Element ausgewählt, wird das Attribut direkt verbunden (⇧ für mehrere)',
-  key: 'Klicke auf die Fläche – ist ein Element ausgewählt, wird der Schlüssel direkt verbunden',
+  select: 'Ziehen verschiebt · Rahmen ziehen wählt mehrere aus (⇧ ergänzt) · Doppelklick benennt · Leertaste+Ziehen oder Scrollen verschiebt die Ansicht',
+  entity: 'Klicke auf die Fläche, um Entities zu platzieren · ⇧ ohne Benennen · Esc oder V zurück zur Auswahl',
+  relationship: 'Klicke auf die Fläche, um Beziehungen zu platzieren · ⇧ ohne Benennen · Esc oder V zurück zur Auswahl',
+  attribute: 'Klicke auf die Fläche – Attribute werden mit dem ausgewählten Element verbunden · Esc oder V zurück',
+  key: 'Klicke auf die Fläche – Schlüssel werden mit dem ausgewählten Element verbunden · Esc oder V zurück',
   connect: 'Quelle anklicken, dann Ziel anklicken – oder von Element zu Element ziehen',
   connectTarget: 'Jetzt das Ziel anklicken · Esc bricht ab',
 };
@@ -61,6 +61,7 @@ const viewport = $('#viewport');
 const gEdges = $('#edges');
 const gNodes = $('#nodes');
 const rubber = $('#rubber');
+const marquee = $('#marquee');
 const panel = $('#panel');
 const hint = $('#hint');
 const inline = $('#inline');
@@ -78,6 +79,7 @@ let nextId = 1;
 let view = { x: 0, y: 0, k: 1 };
 let tool = 'select';
 let selected = null;        // { kind: 'node' | 'edge', id }
+let multi = [];             // Mehrfachauswahl (nur bei mehr als einem Element)
 let connectFrom = null;     // Knoten-ID beim Verbinden
 let drag = null;            // laufende Zieh-Aktion
 let editing = null;         // Inline-Editor
@@ -101,6 +103,7 @@ function restore(json) {
   state = JSON.parse(json);
   nextId = Math.max(0, ...state.nodes.map(n => n.id), ...state.edges.map(e => e.id)) + 1;
   if (selected && !findSelected()) selected = null;
+  multi = multi.filter(s => (s.kind === 'node' ? nodeById(s.id) : edgeById(s.id)));
   connectFrom = null;
   titleInput.value = state.title || '';
   render();
@@ -182,7 +185,9 @@ const diamond = (hw, hh) => `0,${-hh} ${hw},0 0,${hh} ${-hw},0`;
 const nodeById = id => state.nodes.find(n => n.id === id);
 const edgeById = id => state.edges.find(e => e.id === id);
 const findSelected = () => selected && (selected.kind === 'node' ? nodeById(selected.id) : edgeById(selected.id));
-const isSelected = (kind, id) => selected && selected.kind === kind && selected.id === id;
+const isSelected = (kind, id) =>
+  (selected && selected.kind === kind && selected.id === id) || multi.some(s => s.kind === kind && s.id === id);
+const currentSelection = () => (multi.length ? multi.slice() : selected ? [selected] : []);
 
 /* ================= Rendering ================= */
 
@@ -289,19 +294,44 @@ function updateHint() {
 function updateButtons() {
   $('[data-cmd="undo"]').disabled = !undoStack.length;
   $('[data-cmd="redo"]').disabled = !redoStack.length;
-  $('[data-cmd="delete"]').disabled = !selected;
+  $('[data-cmd="delete"]').disabled = !currentSelection().length;
 }
 
 function select(sel) {
   selected = sel;
+  multi = [];
   render();
   renderPanel();
   updateButtons();
 }
 
+function selectMany(items) {
+  if (items.length <= 1) { select(items[0] || null); return; }
+  selected = null;
+  multi = items;
+  render();
+  renderPanel();
+  updateButtons();
+}
+
+function toggleInSelection(item) {
+  const cur = currentSelection();
+  const i = cur.findIndex(s => s.kind === item.kind && s.id === item.id);
+  if (i >= 0) cur.splice(i, 1); else cur.push(item);
+  selectMany(cur);
+}
+
+function selectAll() {
+  selectMany([
+    ...state.nodes.map(n => ({ kind: 'node', id: n.id })),
+    ...state.edges.map(e => ({ kind: 'edge', id: e.id })),
+  ]);
+}
+
 /* ================= Mutationen ================= */
 
-function createNode(type, p, keepTool) {
+// Das Werkzeug bleibt danach aktiv, damit sich mehrere Elemente nacheinander setzen lassen.
+function createNode(type, p, skipNaming) {
   const before = snapshot();
   const anchor = selected && selected.kind === 'node' ? nodeById(selected.id) : null;
   const n = {
@@ -317,19 +347,22 @@ function createNode(type, p, keepTool) {
     state.edges.push({ id: nextId++, from: anchor.id, to: n.id, label: '' });
   }
   commit(before);
-  if (keepTool) {
-    render();
-    return;
-  }
-  setTool('select');
-  select({ kind: 'node', id: n.id });
-  startEdit('node', n.id);
+  // Attribute lassen die Auswahl beim Anker, damit weitere Attribute am selben Element landen
+  if (n.type !== 'attribute' || !anchor) select({ kind: 'node', id: n.id });
+  else render();
+  if (!skipNaming) startEdit('node', n.id);
 }
 
 function addEdge(from, to) {
   if (from === to) return;
   const exists = state.edges.some(e => (e.from === from && e.to === to) || (e.from === to && e.to === from));
-  if (exists) { flashHint('Diese Elemente sind bereits verbunden.'); return; }
+  if (exists) {
+    connectFrom = null;
+    rubber.setAttribute('visibility', 'hidden');
+    render();
+    flashHint('Diese Elemente sind bereits verbunden.');
+    return;
+  }
   const before = snapshot();
   const e = { id: nextId++, from, to, label: '' };
   state.edges.push(e);
@@ -341,14 +374,13 @@ function addEdge(from, to) {
 }
 
 function deleteSelected() {
-  if (!selected) return;
+  const items = currentSelection();
+  if (!items.length) return;
   const before = snapshot();
-  if (selected.kind === 'node') {
-    state.nodes = state.nodes.filter(n => n.id !== selected.id);
-    state.edges = state.edges.filter(e => e.from !== selected.id && e.to !== selected.id);
-  } else {
-    state.edges = state.edges.filter(e => e.id !== selected.id);
-  }
+  const nodeIds = new Set(items.filter(s => s.kind === 'node').map(s => s.id));
+  const edgeIds = new Set(items.filter(s => s.kind === 'edge').map(s => s.id));
+  state.nodes = state.nodes.filter(n => !nodeIds.has(n.id));
+  state.edges = state.edges.filter(e => !edgeIds.has(e.id) && !nodeIds.has(e.from) && !nodeIds.has(e.to));
   commit(before);
   select(null);
 }
@@ -371,8 +403,15 @@ function startEdit(kind, id) {
   inline.placeholder = kind === 'node' ? 'Name' : 'Beschriftung, z. B. 1 oder N';
   inline.hidden = false;
   positionInline();
-  // erst nach dem aktuellen Mausklick fokussieren, sonst nimmt die Zeichenfläche den Fokus wieder
-  setTimeout(() => { if (editing) { inline.focus(); inline.select(); } }, 0);
+  inline.focus();
+  inline.select();
+  // Nach dem laufenden Mausklick erneut markieren – solange noch nichts getippt wurde
+  const initial = inline.value, current = editing;
+  setTimeout(() => {
+    if (editing !== current || inline.value !== initial) return;
+    inline.focus();
+    inline.select();
+  }, 0);
 }
 
 function positionInline() {
@@ -446,7 +485,7 @@ svg.addEventListener('pointerdown', ev => {
   const edgeEl = ev.target.closest('[data-edge]');
   const p = toWorld(ev);
 
-  // Ansicht verschieben: mittlere Taste, Leertaste+Ziehen oder Hintergrund im Auswahlmodus
+  // Ansicht verschieben: mittlere Taste oder Leertaste+Ziehen
   const panGesture = ev.button === 1 || (ev.button === 0 && spaceDown);
   if (panGesture) { startPan(ev); return; }
   if (ev.button !== 0) return;
@@ -480,27 +519,55 @@ svg.addEventListener('pointerdown', ev => {
 
   if (nodeEl) {
     const id = +nodeEl.dataset.node;
+    if (ev.shiftKey) { toggleInSelection({ kind: 'node', id }); return; }
     if (isDoubleClick('node', id)) { select({ kind: 'node', id }); startEdit('node', id); return; }
-    const n = nodeById(id);
-    if (tool !== 'select') setTool('select');
-    select({ kind: 'node', id });
-    drag = { type: 'node', id, ox: p.x - n.x, oy: p.y - n.y, before: snapshot(), moved: false };
+    // Gehört der Knoten zur Mehrfachauswahl, wird die ganze Gruppe verschoben
+    const inGroup = multi.some(s => s.kind === 'node' && s.id === id);
+    if (!inGroup) select({ kind: 'node', id });
+    const ids = inGroup ? multi.filter(s => s.kind === 'node').map(s => s.id) : [id];
+    const origin = ids.map(i => { const n = nodeById(i); return { n, x: n.x, y: n.y }; });
+    drag = { type: 'node', start: p, origin, before: snapshot(), moved: false };
     svg.setPointerCapture(ev.pointerId);
     return;
   }
 
   if (edgeEl) {
     const id = +edgeEl.dataset.edge;
-    if (tool !== 'select') setTool('select');
+    if (ev.shiftKey) { toggleInSelection({ kind: 'edge', id }); return; }
     select({ kind: 'edge', id });
     if (isDoubleClick('edge', id)) startEdit('edge', id);
     return;
   }
 
+  // Hintergrund: Rahmen-Auswahl (mit ⇧ zur bestehenden Auswahl hinzufügen)
   lastDown = null;
-  select(null);
-  startPan(ev);
+  const base = ev.shiftKey ? currentSelection() : [];
+  if (!ev.shiftKey) select(null);
+  drag = { type: 'marquee', start: p, base };
+  svg.setPointerCapture(ev.pointerId);
 });
+
+function updateMarquee(p) {
+  const x1 = Math.min(drag.start.x, p.x), x2 = Math.max(drag.start.x, p.x);
+  const y1 = Math.min(drag.start.y, p.y), y2 = Math.max(drag.start.y, p.y);
+  marquee.setAttribute('x', x1); marquee.setAttribute('y', y1);
+  marquee.setAttribute('width', x2 - x1); marquee.setAttribute('height', y2 - y1);
+  marquee.setAttribute('visibility', 'visible');
+
+  // Knoten zählen, sobald der Rahmen sie berührt; Kanten über ihren Mittelpunkt
+  const hits = [];
+  for (const n of state.nodes) {
+    const { w, h } = nodeSize(n);
+    if (n.x + w / 2 >= x1 && n.x - w / 2 <= x2 && n.y + h / 2 >= y1 && n.y - h / 2 <= y2) hits.push({ kind: 'node', id: n.id });
+  }
+  for (const e of state.edges) {
+    const geo = edgeGeometry(e);
+    if (geo && geo.mx >= x1 && geo.mx <= x2 && geo.my >= y1 && geo.my <= y2) hits.push({ kind: 'edge', id: e.id });
+  }
+  const items = drag.base.slice();
+  for (const h of hits) if (!items.some(s => s.kind === h.kind && s.id === h.id)) items.push(h);
+  selectMany(items);
+}
 
 function startPan(ev) {
   drag = { type: 'pan', sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y };
@@ -525,10 +592,13 @@ svg.addEventListener('pointermove', ev => {
     view.x = drag.vx + ev.clientX - drag.sx;
     view.y = drag.vy + ev.clientY - drag.sy;
     viewChanged();
+  } else if (drag.type === 'marquee') {
+    updateMarquee(p);
   } else if (drag.type === 'node') {
-    const n = nodeById(drag.id);
-    n.x = Math.round(p.x - drag.ox);
-    n.y = Math.round(p.y - drag.oy);
+    for (const o of drag.origin) {
+      o.n.x = Math.round(o.x + p.x - drag.start.x);
+      o.n.y = Math.round(o.y + p.y - drag.start.y);
+    }
     drag.moved = true;
     lastDown = null;
     render();
@@ -543,9 +613,14 @@ svg.addEventListener('pointerup', ev => {
     if (target && +target.dataset.node !== drag.id) addEdge(drag.id, +target.dataset.node);
   }
   svg.classList.remove('panning');
+  marquee.setAttribute('visibility', 'hidden');
   drag = null;
 });
-svg.addEventListener('pointercancel', () => { drag = null; svg.classList.remove('panning'); });
+svg.addEventListener('pointercancel', () => {
+  drag = null;
+  svg.classList.remove('panning');
+  marquee.setAttribute('visibility', 'hidden');
+});
 
 // Scrollen = Ansicht verschieben, Strg/⌘ + Scrollen bzw. Pinch = Zoomen
 svg.addEventListener('wheel', ev => {
@@ -600,6 +675,7 @@ document.addEventListener('keydown', ev => {
   if (mod && key === 'z') { ev.preventDefault(); ev.shiftKey ? redo() : undo(); return; }
   if (mod && key === 'y') { ev.preventDefault(); redo(); return; }
   if (mod && key === 's') { ev.preventDefault(); saveJSON(); return; }
+  if (mod && key === 'a') { ev.preventDefault(); selectAll(); return; }
   if (mod) return;
 
   if (ev.key === ' ') { spaceDown = true; ev.preventDefault(); return; }
@@ -607,15 +683,17 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') { setTool('select'); select(null); return; }
   if (ev.key === 'Enter' && selected) { ev.preventDefault(); startEdit(selected.kind, selected.id); return; }
 
-  if (ev.key.startsWith('Arrow') && selected?.kind === 'node') {
+  const movable = currentSelection().filter(s => s.kind === 'node').map(s => nodeById(s.id));
+  if (ev.key.startsWith('Arrow') && movable.length) {
     ev.preventDefault();
-    const n = nodeById(selected.id);
     const step = ev.shiftKey ? 10 : 1;
     const before = snapshot();
-    if (ev.key === 'ArrowLeft') n.x -= step;
-    if (ev.key === 'ArrowRight') n.x += step;
-    if (ev.key === 'ArrowUp') n.y -= step;
-    if (ev.key === 'ArrowDown') n.y += step;
+    for (const n of movable) {
+      if (ev.key === 'ArrowLeft') n.x -= step;
+      if (ev.key === 'ArrowRight') n.x += step;
+      if (ev.key === 'ArrowUp') n.y -= step;
+      if (ev.key === 'ArrowDown') n.y += step;
+    }
     commit(before);
     render();
     return;
@@ -647,6 +725,8 @@ const HELP_HTML = `
       <li>Schlüssel <kbd>K</kbd></li>
       <li>Kante <kbd>C</kbd></li>
       <li>Umbenennen <kbd>Enter</kbd></li>
+      <li>Mehrfachauswahl <kbd>Rahmen / ⇧ Klick</kbd></li>
+      <li>Alles auswählen <kbd>⌘/Strg A</kbd></li>
       <li>Löschen <kbd>Entf</kbd></li>
       <li>Rückgängig <kbd>⌘/Strg Z</kbd></li>
       <li>Alles einpassen <kbd>F</kbd></li>
@@ -659,6 +739,19 @@ let panelBefore = null;
 
 function renderPanel() {
   const obj = findSelected();
+  if (!obj && multi.length) {
+    const nodes = multi.filter(s => s.kind === 'node').length;
+    const edges = multi.length - nodes;
+    const parts = [];
+    if (nodes) parts.push(`${nodes} ${nodes === 1 ? 'Element' : 'Elemente'}`);
+    if (edges) parts.push(`${edges} ${edges === 1 ? 'Kante' : 'Kanten'}`);
+    panel.innerHTML = `
+      <h2>Mehrfachauswahl</h2>
+      <div class="info">${parts.join(' und ')} ausgewählt</div>
+      <div class="help"><p>Ziehen oder Pfeiltasten verschieben alle gemeinsam. ⇧ + Klick nimmt einzelne Elemente hinzu oder heraus.</p></div>
+      <button class="danger" data-action="delete">Alle löschen</button>`;
+    return;
+  }
   if (!obj) { panel.innerHTML = HELP_HTML; return; }
 
   const isNode = selected.kind === 'node';
@@ -795,6 +888,7 @@ fileInput.addEventListener('change', async () => {
     const loaded = loadData(JSON.parse(await file.text()));
     const before = snapshot();
     selected = null;
+    multi = [];
     restore(JSON.stringify(loaded));
     commit(before);
     fit();
@@ -804,8 +898,8 @@ fileInput.addEventListener('change', async () => {
 });
 
 function exportSVGMarkup() {
-  const sel = selected, src = connectFrom;
-  selected = null; connectFrom = null;
+  const sel = selected, group = multi, src = connectFrom;
+  selected = null; multi = []; connectFrom = null;
   render();
   const b = bounds(30) || { x: 0, y: 0, w: 100, h: 100 };
   const markup =
@@ -813,7 +907,7 @@ function exportSVGMarkup() {
     `<style>${DIAGRAM_CSS}</style>` +
     `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#ffffff"/>` +
     gEdges.outerHTML + gNodes.outerHTML + '</svg>';
-  selected = sel; connectFrom = src;
+  selected = sel; multi = group; connectFrom = src;
   render();
   return { markup, b };
 }
@@ -845,6 +939,7 @@ function newDiagram() {
   state = { title: 'Unbenanntes Diagramm', nodes: [], edges: [] };
   titleInput.value = state.title;
   selected = null;
+  multi = [];
   commit(before);
   render();
   renderPanel();

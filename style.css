@@ -115,6 +115,14 @@ main { flex: 1; display: flex; min-height: 0; }
 #canvas.panning { cursor: grabbing; }
 
 #rubber { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 4; pointer-events: none; }
+#marquee {
+  fill: rgba(103, 65, 217, .07);
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 
 .hint {
   position: absolute;

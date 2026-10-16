@@ -20,6 +20,8 @@ Die App ist nicht von Apple notarisiert. Beim ersten Start unter **Systemeinstel
 - **Beschriftbare Kanten** – frei oder per Schnellauswahl (`1`, `N`, `M`, `0..1`, `1..*`, `(0,n)` …)
 - Varianten: schwache Entity, identifizierende Beziehung, partieller Schlüssel, mehrwertiges und abgeleitetes Attribut, totale Teilnahme (Doppellinie)
 - Attribute werden automatisch mit dem ausgewählten Element verbunden
+- Werkzeuge bleiben nach dem Platzieren aktiv – mehrere Entities oder Kanten am Stück
+- Rahmen-Auswahl für mehrere Elemente: gemeinsam löschen oder verschieben
 - Rückgängig/Wiederholen, Zoomen, Verschieben, Alles einpassen
 - Automatisches Speichern im Browser, Speichern/Öffnen als JSON
 - Export als **SVG** und **PNG**
@@ -28,11 +30,12 @@ Die App ist nicht von Apple notarisiert. Beim ersten Start unter **Systemeinstel
 
 | Aktion | So geht's |
 | --- | --- |
-| Element platzieren | Werkzeug wählen (`E`, `R`, `A`, `K`), auf die Fläche klicken – mit `⇧` bleibt das Werkzeug aktiv |
+| Element platzieren | Werkzeug wählen (`E`, `R`, `A`, `K`), auf die Fläche klicken – das Werkzeug bleibt aktiv, `Esc` oder `V` führt zurück zur Auswahl; mit `⇧` ohne Benennen |
 | Umbenennen / Kante beschriften | Doppelklick oder `Enter` |
 | Verbinden | Werkzeug **Kante** (`C`): Quelle und Ziel anklicken oder von Element zu Element ziehen |
-| Verschieben | Element ziehen, Feinjustierung mit Pfeiltasten |
-| Ansicht verschieben | Hintergrund ziehen, Scrollen oder Leertaste + Ziehen |
+| Mehrere auswählen | Rahmen auf dem Hintergrund ziehen, `⇧` + Klick ergänzt, `⌘`/`Strg` + `A` wählt alles |
+| Verschieben | Element ziehen (bei Mehrfachauswahl alle gemeinsam), Feinjustierung mit Pfeiltasten |
+| Ansicht verschieben | Scrollen oder Leertaste + Ziehen |
 | Zoomen | `⌘`/`Strg` + Scrollen, `+` / `-`, `F` passt alles ein |
 | Löschen | `Entf` / `Backspace` |
 | Rückgängig | `⌘`/`Strg` + `Z`, Wiederholen mit `⇧` |
