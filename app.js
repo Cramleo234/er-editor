@@ -188,8 +188,8 @@ function nativeCommand(name) {
 /* ================= Einstellungen ================= */
 
 const THEME_LABEL = { auto: 'Automatisch', light: 'Hell', dark: 'Dunkel' };
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
 const THEME_ICON = {
-  auto: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
   light: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   dark: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>',
 };
@@ -206,18 +206,26 @@ function setPref(key, value) {
   render();
 }
 
+// Tatsächlich angezeigtes Design (bei „Automatisch“ das des Systems)
+const effectiveTheme = () => (prefs.theme === 'auto' ? (systemDark.matches ? 'dark' : 'light') : prefs.theme);
+
 function applyPrefs() {
   const root = document.documentElement;
   if (prefs.theme === 'auto') delete root.dataset.theme;
   else root.dataset.theme = prefs.theme;
-  themeBtn.innerHTML = THEME_ICON[prefs.theme];
-  themeBtn.title = `Darstellung: ${THEME_LABEL[prefs.theme]} (klicken zum Wechseln)`;
+  const shown = effectiveTheme();
+  themeBtn.innerHTML = THEME_ICON[shown];
+  const other = shown === 'dark' ? 'Helles' : 'Dunkles';
+  themeBtn.title = `${other} Design einschalten (aktuell ${THEME_LABEL[shown]}` +
+    `${prefs.theme === 'auto' ? ', wie das System' : ''}) – Rechtsklick auf die Fläche: Automatisch`;
+  if (NATIVE) window.webkit.messageHandlers.er.postMessage({ type: 'theme', value: prefs.theme });
 }
 
-function cycleTheme() {
-  const order = ['auto', 'light', 'dark'];
-  setPref('theme', order[(order.indexOf(prefs.theme) + 1) % order.length]);
+// Der Knopf schaltet immer sichtbar um: von Hell auf Dunkel und umgekehrt
+function toggleTheme() {
+  setPref('theme', effectiveTheme() === 'dark' ? 'light' : 'dark');
 }
+systemDark.addEventListener('change', applyPrefs);
 
 /* ================= Geometrie ================= */
 
@@ -455,7 +463,7 @@ function renderBadges() {
 
 // Anfasser und Schnell-Hinzufügen am Element unter dem Zeiger (bzw. am ausgewählten Element)
 function overlayTarget() {
-  if (drag || editing || tool !== 'select' || multi.length) return null;
+  if (drag || editing || multi.length) return null;
   if (hoverId != null && nodeById(hoverId)) return nodeById(hoverId);
   if (selected && selected.kind === 'node') return nodeById(selected.id);
   return null;
@@ -496,7 +504,6 @@ function setHover(id) {
 }
 
 function updateHover(ev, p) {
-  if (tool !== 'select') { setHover(null); return; }
   const t = ev.target;
   const nodeEl = t.closest && t.closest('[data-node]');
   const ownerEl = t.closest && t.closest('[data-owner]');
@@ -1319,6 +1326,10 @@ function menuForBackground(p) {
     '-',
     { label: 'Am Raster einrasten', checked: prefs.snap, run: () => setPref('snap', !prefs.snap) },
     { label: 'Hinweise anzeigen', checked: prefs.hints, run: () => setPref('hints', !prefs.hints) },
+    '-',
+    ...Object.entries(THEME_LABEL).map(([value, label]) => (
+      { label: `Design: ${label}`, checked: prefs.theme === value, run: () => setPref('theme', value) }
+    )),
   ];
 }
 
@@ -1763,7 +1774,7 @@ const COMMANDS = {
   svg: exportSVG,
   png: exportPNG,
   issues: nextIssue,
-  theme: cycleTheme,
+  theme: toggleTheme,
   'zoom-in': () => zoomCenter(1.2),
   'zoom-out': () => zoomCenter(1 / 1.2),
   'zoom-reset': zoomReset,
@@ -1838,6 +1849,9 @@ window.ERBridge = {
       exportSVG,
       exportPNG,
       nextIssue,
+      themeAuto: () => setPref('theme', 'auto'),
+      themeLight: () => setPref('theme', 'light'),
+      themeDark: () => setPref('theme', 'dark'),
     };
     actions[cmd]?.();
   },

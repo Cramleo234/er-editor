@@ -97,6 +97,11 @@ final class ERDocument: NSDocument, WKScriptMessageHandler, WKUIDelegate, WKNavi
         case "changed":
             json = body["json"] as? String
             updateChangeCount(.changeDone)
+        case "theme":
+            // Fensterrahmen passend zum gewählten Design (nil = wie das System)
+            let names: [String: NSAppearance.Name] = ["light": .aqua, "dark": .darkAqua]
+            let appearance = (body["value"] as? String).flatMap { names[$0] }.flatMap { NSAppearance(named: $0) }
+            for controller in windowControllers { controller.window?.appearance = appearance }
         case "command":
             switch body["name"] as? String {
             case "new": NSDocumentController.shared.newDocument(nil)
@@ -244,6 +249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             web("Alles einpassen", "fit", "9"),
             .separator(),
             web("Nächster Hinweis", "nextIssue", "i", [.command, .option]),
+            .separator(),
+            web("Design: Automatisch", "themeAuto"),
+            web("Design: Hell", "themeLight"),
+            web("Design: Dunkel", "themeDark"),
             .separator(),
             item("Vollbild", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ]))
