@@ -104,15 +104,50 @@ final class ERDocument: NSDocument, WKScriptMessageHandler, WKUIDelegate, WKNavi
             let names: [String: NSAppearance.Name] = ["light": .aqua, "dark": .darkAqua]
             let appearance = (body["value"] as? String).flatMap { names[$0] }.flatMap { NSAppearance(named: $0) }
             for controller in windowControllers { controller.window?.appearance = appearance }
+        case "copyImage":
+            // Diagramm als Bild in die Zwischenablage (TIFF mit richtiger Größe, zusätzlich PNG)
+            guard let base64 = body["png"] as? String, let data = Data(base64Encoded: base64),
+                  let bitmap = NSBitmapImageRep(data: data) else { return }
+            // doppelt gerendert: Größe halbieren, damit das Bild in Pages, Word & Co. in Originalgröße erscheint
+            bitmap.size = NSSize(width: CGFloat(bitmap.pixelsWide) / 2, height: CGFloat(bitmap.pixelsHigh) / 2)
+            let board = NSPasteboard.general
+            board.clearContents()
+            board.declareTypes([.tiff, .png], owner: nil)
+            if let tiff = bitmap.tiffRepresentation { board.setData(tiff, forType: .tiff) }
+            board.setData(bitmap.representation(using: .png, properties: [:]) ?? data, forType: .png)
         case "command":
             switch body["name"] as? String {
             case "new": NSDocumentController.shared.newDocument(nil)
             case "open": NSDocumentController.shared.openDocument(nil)
             case "save": save(nil)
+            case "print": printDiagram(nil)
             default: break
             }
         default:
             break
+        }
+    }
+
+    /// Drucken bzw. als PDF sichern: das Diagramm als Bild, auf die Seite eingepasst
+    @objc func printDiagram(_ sender: Any?) {
+        guard let web = webView, let window = web.window, webReady else { return }
+        web.callAsyncJavaScript("return await ERBridge.printImage()", arguments: [:], in: nil, in: .page) { result in
+            guard case .success(let value) = result, let base64 = value as? String,
+                  let data = Data(base64Encoded: base64), let image = NSImage(data: data),
+                  let rep = image.representations.first else { NSSound.beep(); return }
+            image.size = NSSize(width: rep.pixelsWide / 3, height: rep.pixelsHigh / 3)  // dreifach gerendert
+            let view = NSImageView(frame: NSRect(origin: .zero, size: image.size))
+            view.image = image
+            view.imageScaling = .scaleProportionallyUpOrDown
+            let info = (self.printInfo.copy() as? NSPrintInfo) ?? NSPrintInfo()
+            info.horizontalPagination = .fit
+            info.verticalPagination = .fit
+            info.isHorizontallyCentered = true
+            info.isVerticallyCentered = true
+            info.orientation = image.size.width > image.size.height ? .landscape : .portrait
+            let operation = NSPrintOperation(view: view, printInfo: info)
+            operation.jobTitle = self.displayName
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         }
     }
 
@@ -228,9 +263,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Umbenennen …", #selector(NSDocument.rename(_:))),
             item("Bewegen …", #selector(NSDocument.move(_:))),
             item("Zurücksetzen auf zuletzt gesichert", #selector(NSDocument.revertToSaved(_:))),
+            item("Alle Versionen durchsuchen …", #selector(NSDocument.browseVersions(_:))),
             .separator(),
+            web("Relationenmodell & SQL …", "relational", "r", [.command, .option]),
             web("Als SVG exportieren …", "exportSVG", "e", [.command, .option]),
             web("Als PNG exportieren …", "exportPNG", "e", [.command, .shift]),
+            .separator(),
+            item("Drucken …", #selector(ERDocument.printDiagram(_:)), "p"),
         ]))
 
         main.addItem(submenu("Bearbeiten", [
@@ -239,10 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .separator(),
             item("Ausschneiden", #selector(NSText.cut(_:)), "x"),
             item("Kopieren", #selector(NSText.copy(_:)), "c"),
+            web("Als Bild kopieren", "copyImage", "c", [.command, .shift]),
             item("Einsetzen", #selector(NSText.paste(_:)), "v"),
             web("Auswahl duplizieren", "duplicate", "d"),
             web("Löschen", "delete"),
             web("Alles auswählen", "selectAll", "a"),
+            .separator(),
+            web("Suchen …", "search", "f"),
         ]))
 
         main.addItem(submenu("Darstellung", [
@@ -250,6 +292,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             web("Verkleinern", "zoomOut", "-"),
             web("Originalgröße", "zoomReset", "0"),
             web("Alles einpassen", "fit", "9"),
+            web("Auf Auswahl zoomen", "fitSelection", "9", [.command, .shift]),
+            web("Übersichtskarte ein/aus", "toggleMinimap"),
             .separator(),
             web("Nächster Hinweis", "nextIssue", "i", [.command, .option]),
             .separator(),

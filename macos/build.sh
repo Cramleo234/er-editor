@@ -23,7 +23,7 @@ lipo -create "$BUILD"/obj/ER-Editor-* -output "$APP/Contents/MacOS/ER-Editor"
 # Web-App und Info.plist
 # Versionskennung der Web-Dateien (gegen gemischte Browser-Caches) an VERSION angleichen
 sed -i '' -E "s/\?v=[0-9A-Za-z.-]+/?v=$VERSION/g" index.html
-cp index.html style.css app.js changelog.js "$APP/Contents/Resources/web/"
+cp index.html style.css app.js changelog.js relational.js "$APP/Contents/Resources/web/"
 sed "s/__VERSION__/$VERSION/g" macos/Info.plist > "$APP/Contents/Info.plist"
 
 # Icon

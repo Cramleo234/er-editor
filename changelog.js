@@ -1,5 +1,20 @@
 window.ER_CHANGELOG = [
   {
+    "version": "1.3.0",
+    "date": "2026-10-19",
+    "changes": [
+      "Rekursive Beziehungen (z. B. „Mitarbeiter leitet Mitarbeiter“): zwei Kanten zur selben Entity als Bögen, mit Rollennamen",
+      "Schnelleingabe: Element auswählen, Tab drücken, Attribute tippen und mit Enter das nächste anlegen; „*“ am Anfang macht einen Schlüssel",
+      "Relationenmodell und SQL: Tabellen und CREATE-TABLE-Skript automatisch aus dem Diagramm ableiten (Knopf „Tabellen“)",
+      "Als Bild kopieren (⇧⌘C): Diagramm oder Auswahl direkt in Word, Pages oder Keynote einfügen",
+      "Suchen (⌘F) mit Springen zwischen Treffern, Übersichtskarte in der Ecke, Auf Auswahl zoomen (⇧F)",
+      "Notizen als frei platzierbare Zettel, Farben für Elemente und Sperren gegen versehentliches Verschieben oder Löschen",
+      "Drucken und Als PDF sichern (⌘P); Mac-App: „Alle Versionen durchsuchen …“ im Menü Ablage",
+      "Leeres Diagramm zeigt eine kurze Anleitung; Hinzufügen-Knöpfe weichen nach unten aus, wenn oben etwas im Weg ist",
+      "Werkzeugleiste blendet in schmalen Fenstern die Beschriftungen aus"
+    ]
+  },
+  {
     "version": "1.2.1",
     "date": "2026-10-19",
     "changes": [

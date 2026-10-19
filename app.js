@@ -17,6 +17,12 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const NATIVE = Boolean(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.er);
 
 const TYPES = { entity: 'Entity', relationship: 'Beziehung', attribute: 'Attribut' };
+const NODE_TYPES = { ...TYPES, note: 'Notiz' };  // Notizen gehören nicht zum ER-Modell
+const NOTE_FONT = `400 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+const COLORS = {
+  blue: ['Blau', '59,111,224'], green: ['Grün', '47,158,68'], orange: ['Orange', '232,89,12'],
+  red: ['Rot', '224,49,49'], purple: ['Lila', '156,54,181'], gray: ['Grau', '134,142,150'],
+};
 const LABEL_PRESETS = ['1', 'N', 'M', '(0,1)', '(1,1)', '(0,n)', '(1,n)'];
 
 // Min-Max-Angaben einheitlich als (min,max): "0..1", "1..*", "1,n", "( 0 ; N )" -> "(0,1)", "(1,n)", "(0,n)"
@@ -61,6 +67,7 @@ const HINTS = {
   key: 'Klicke auf die Fläche – Schlüssel werden mit dem ausgewählten Element verbunden · Esc oder V zurück',
   connect: 'Quelle anklicken, dann Ziel anklicken – oder von Element zu Element ziehen',
   connectTarget: 'Ziel anklicken oder loslassen – im Leeren entsteht ein neues Element · Esc bricht ab',
+  note: 'Klicke auf die Fläche, um Notizen zu platzieren · ⇧Enter für eine neue Zeile · Esc oder V zurück',
 };
 
 // Diagramm-Styles: in der Zeichenfläche UND in exportierten SVG/PNG. Die Variablen setzt style.css
@@ -75,10 +82,17 @@ text{font:${NAME_FONT};fill:var(--d-text,#1f2430);text-anchor:middle;dominant-ba
 .dashed{stroke-dasharray:5 4}
 .underline{stroke:var(--d-text,#1f2430);stroke-width:1.3}
 .underline.dashed{stroke-dasharray:4 3}
-.edge .stroke{stroke:var(--d-edge,#4a5263);stroke-width:1.6}
+.edge .stroke{stroke:var(--d-edge,#4a5263);stroke-width:1.6;fill:none}
+.edge .hit{fill:none}
+.role{font:italic 500 12px ${FONT_STACK};fill:var(--d-muted,#667085);paint-order:stroke;stroke:var(--d-paper,#ffffff);stroke-width:4px;stroke-linejoin:round}
 .edge .hit{stroke:transparent;stroke-width:14}
 .label-bg{fill:var(--d-label-bg,#ffffff);stroke:var(--d-label-border,#c9ced8);stroke-width:1}
 .label{font:${LABEL_FONT}}
+.note .shape{fill:var(--d-note-fill,#fff6bf);stroke:var(--d-note-stroke,#d9a400)}
+.note .fold{fill:none;stroke:var(--d-note-stroke,#d9a400);stroke-width:1.2}
+.note-text{font:${NOTE_FONT};text-anchor:start}
+.edge.note-link .stroke{stroke-dasharray:4 4}
+${Object.entries(COLORS).map(([c, [, rgb]]) => `.node.c-${c} .shape{fill:rgba(${rgb},.16);stroke:rgb(${rgb})}`).join('\n')}
 .node.selected .shape,.node.target .shape,.edge.selected .stroke{stroke:var(--d-accent,#6741d9);stroke-width:2.6}
 .edge.selected .label-bg{stroke:var(--d-accent,#6741d9);stroke-width:1.6}
 .node.source .shape{stroke:var(--d-accent,#6741d9);stroke-width:2.6;stroke-dasharray:5 3}
@@ -105,6 +119,10 @@ const ctxMenu = $('#ctxmenu');
 const issuesBtn = $('#issues-btn');
 const themeBtn = $('#theme-btn');
 const dialog = $('#dialog');
+const searchBox = $('#search');
+const searchInput = $('#search-input');
+const minimap = $('#minimap');
+const emptyState = $('#empty');
 
 const styleEl = document.createElementNS(SVGNS, 'style');
 styleEl.textContent = DIAGRAM_CSS;
@@ -132,7 +150,7 @@ let issueIndex = -1;
 let clipboard = null;
 let pasteCount = 0;
 let menuItems = [];
-let prefs = { theme: 'auto', hints: true, snap: true };
+let prefs = { theme: 'auto', hints: true, snap: true, minimap: true };
 
 const snapshot = () => JSON.stringify(state);
 const serialize = () => JSON.stringify({ format: 'er-editor', version: 1, ...state }, null, 2);
@@ -220,6 +238,7 @@ function applyPrefs() {
   themeBtn.title = `${other} Design einschalten (aktuell ${THEME_LABEL[shown]}` +
     `${prefs.theme === 'auto' ? ', wie das System' : ''}) – Rechtsklick auf die Fläche: Automatisch`;
   if (NATIVE) window.webkit.messageHandlers.er.postMessage({ type: 'theme', value: prefs.theme });
+  minimapColors = null;
 }
 
 // Der Knopf schaltet immer sichtbar um: von Hell auf Dunkel und umgekehrt
@@ -249,6 +268,7 @@ function formatDate(iso) {
 
 // Ohne Angabe der ganze Verlauf, sonst nur was seit „since“ neu ist
 function showChangelog(since) {
+  $('.dialog', dialog).classList.remove('wide');
   const entries = since ? CHANGELOG.filter(e => compareVersions(e.version, since) > 0) : CHANGELOG;
   $('#dialog-title').textContent = since ? `Neu in Version ${APP_VERSION}` : 'Versionsverlauf';
   $('#dialog-body').innerHTML = entries.map(e => `
@@ -268,8 +288,24 @@ function closeDialog() {
 }
 
 dialog.addEventListener('click', ev => {
-  if (ev.target === dialog || ev.target.closest('[data-close]')) closeDialog();
-  else if (ev.target.closest('[data-all]')) showChangelog();
+  const t = ev.target;
+  if (t === dialog || t.closest('[data-close]')) { closeDialog(); return; }
+  if (t.closest('[data-all]')) { showChangelog(); return; }
+  const tab = t.closest('[data-tab]');
+  if (tab) {
+    dialog.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b === tab)));
+    dialog.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== tab.dataset.tab; });
+    return;
+  }
+  if (t.closest('[data-copy-text]') && relationalTexts) {
+    const pane = dialog.querySelector('[data-tab][aria-selected="true"]')?.dataset.tab || 'model';
+    copyText(relationalTexts[pane]);
+    t.closest('button').textContent = 'Kopiert ✓';
+    return;
+  }
+  if (t.closest('[data-save-sql]') && relationalTexts) {
+    download(fileBase() + '.sql', new Blob([relationalTexts.sql], { type: 'application/sql' }));
+  }
 });
 
 // Nach einem Update einmal zeigen, was neu ist (nicht bei der ersten Nutzung)
@@ -300,6 +336,11 @@ function textWidth(text, font = NAME_FONT) {
 }
 
 function nodeSize(n) {
+  if (n.type === 'note') {
+    const lines = (n.name || ' ').split('\n');
+    const tw = Math.max(...lines.map(l => textWidth(l, NOTE_FONT)));
+    return { w: Math.max(140, tw + 28), h: Math.max(44, lines.length * 18 + 22) };
+  }
   const tw = textWidth(n.name);
   if (n.type === 'entity') return { w: Math.max(110, tw + 40), h: 52 };
   if (n.type === 'relationship') return { w: Math.max(130, tw * 1.35 + 50), h: 76 };
@@ -315,19 +356,43 @@ function borderPoint(n, tx, ty) {
   const dx = tx - n.x, dy = ty - n.y;
   if (!dx && !dy) return { x: n.x, y: n.y };
   let t;
-  if (n.type === 'entity') t = Math.min(hw / Math.abs(dx || 1e-9), hh / Math.abs(dy || 1e-9));
+  if (n.type === 'entity' || n.type === 'note') t = Math.min(hw / Math.abs(dx || 1e-9), hh / Math.abs(dy || 1e-9));
   else if (n.type === 'relationship') t = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
   else t = 1 / Math.hypot(dx / hw, dy / hh);
   t = Math.min(t, 1);
   return { x: n.x + dx * t, y: n.y + dy * t };
 }
 
+const bezier = (p, c, q, t) => ({
+  x: (1 - t) * (1 - t) * p.x + 2 * (1 - t) * t * c.x + t * t * q.x,
+  y: (1 - t) * (1 - t) * p.y + 2 * (1 - t) * t * c.y + t * t * q.y,
+});
+
+// Punkt auf der Kante bei t (0 = Start, 1 = Ende) – gerade oder als Bogen
+const pointAt = (geo, t) => (geo.c ? bezier(geo.p, geo.c, geo.q, t)
+  : { x: geo.p.x + (geo.q.x - geo.p.x) * t, y: geo.p.y + (geo.q.y - geo.p.y) * t });
+
 function edgeGeometry(e) {
   const a = nodeById(e.from), b = nodeById(e.to);
   if (!a || !b) return null;
-  const p = borderPoint(a, b.x, b.y);
-  const q = borderPoint(b, a.x, a.y);
-  return { a, b, p, q, mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
+  const { i, n } = parallelOf(e);
+  let c = null, side = -1;
+  if (n > 1) {
+    // Parallele Kanten (z. B. rekursive Beziehung) als Bögen auseinanderziehen.
+    // Die Senkrechte bezieht sich immer auf die Richtung kleinere → größere ID, damit sich die Bögen nicht decken.
+    const [s, t] = a.id < b.id ? [a, b] : [b, a];
+    const dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy) || 1;
+    const offset = (i - (n - 1) / 2) * 170;
+    c = { x: (a.x + b.x) / 2 - (dy / len) * offset, y: (a.y + b.y) / 2 + (dx / len) * offset };
+    side = Math.sign(offset) || -1;
+  }
+  const p = c ? borderPoint(a, c.x, c.y) : borderPoint(a, b.x, b.y);
+  const q = c ? borderPoint(b, c.x, c.y) : borderPoint(b, a.x, a.y);
+  const geo = { a, b, p, q, c, side };
+  const mid = pointAt(geo, 0.5);
+  geo.mx = mid.x;
+  geo.my = mid.y;
+  return geo;
 }
 
 // Kardinalitäten sitzen standardmäßig nahe der Entity; verschoben gilt e.labelT (0..1 entlang der Kante)
@@ -342,7 +407,38 @@ function labelPosition(e, geo) {
     if (a.type === 'entity' && b.type !== 'entity') t = near;
     else if (b.type === 'entity' && a.type !== 'entity') t = 1 - near;
   }
-  return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+  return pointAt(geo, t);
+}
+
+// Rollenname: neben der Kantenmitte, bei Bögen auf der Außenseite
+function rolePosition(geo) {
+  const { p, q, c } = geo;
+  const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+  let nx = -dy / len, ny = dx / len;
+  if (c) {
+    // Normale zeigt zur Bogenspitze hin
+    const towards = (c.x - (p.x + q.x) / 2) * nx + (c.y - (p.y + q.y) / 2) * ny;
+    if (towards < 0) { nx = -nx; ny = -ny; }
+  } else if (ny > 0) {
+    nx = -nx; ny = -ny;  // gerade Kanten: Rolle oberhalb
+  }
+  return { x: geo.mx + nx * 14, y: geo.my + ny * 14 };
+}
+
+// Nächster Punkt auf der Kante zu p, als t im Bereich 0,08 … 0,92
+function projectOnEdge(geo, p) {
+  if (!geo.c) {
+    const vx = geo.q.x - geo.p.x, vy = geo.q.y - geo.p.y;
+    const t = ((p.x - geo.p.x) * vx + (p.y - geo.p.y) * vy) / (vx * vx + vy * vy || 1);
+    return Math.min(0.92, Math.max(0.08, t));
+  }
+  let best = 0.5, bestD = Infinity;
+  for (let t = 0.08; t <= 0.921; t += 0.01) {
+    const pt = pointAt(geo, t);
+    const d = (pt.x - p.x) ** 2 + (pt.y - p.y) ** 2;
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return best;
 }
 
 function bounds(pad = 0, nodes = state.nodes) {
@@ -379,7 +475,7 @@ const diamond = (hw, hh) => `0,${-hh} ${hw},0 0,${hh} ${-hw},0`;
 
 // Nachschlagetabellen; sie werden neu aufgebaut, sobald eine Liste ersetzt wird oder ihre Länge sich ändert
 // (Knoten und Kanten werden nur angehängt oder per filter() neu erzeugt, nie an Ort und Stelle ausgetauscht)
-const lookup = { nodes: null, nodeCount: -1, nodeMap: null, edges: null, edgeCount: -1, edgeMap: null, adjacency: null };
+const lookup = { nodes: null, nodeCount: -1, nodeMap: null, edges: null, edgeCount: -1, edgeMap: null, adjacency: null, parallel: null };
 function nodeIndex() {
   if (lookup.nodes !== state.nodes || lookup.nodeCount !== state.nodes.length) {
     lookup.nodes = state.nodes;
@@ -395,6 +491,7 @@ function edgeIndex() {
     lookup.edgeCount = state.edges.length;
     lookup.edgeMap = new Map(state.edges.map(e => [e.id, e]));
     lookup.adjacency = null;
+    lookup.parallel = null;
   }
   return lookup.edgeMap;
 }
@@ -408,6 +505,21 @@ function adjacency() {
     lookup.adjacency = adj;
   }
   return lookup.adjacency;
+}
+// Mehrere Kanten zwischen denselben zwei Elementen: Position innerhalb der Gruppe
+function parallelOf(e) {
+  edgeIndex();
+  if (!lookup.parallel) {
+    const groups = new Map();
+    for (const edge of state.edges) {
+      const key = Math.min(edge.from, edge.to) + '-' + Math.max(edge.from, edge.to);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(edge.id);
+    }
+    lookup.parallel = new Map();
+    for (const ids of groups.values()) ids.forEach((id, i) => lookup.parallel.set(id, { i, n: ids.length }));
+  }
+  return lookup.parallel.get(e.id) || { i: 0, n: 1 };
 }
 const nodeById = id => nodeIndex().get(id);
 const edgeById = id => edgeIndex().get(id);
@@ -450,8 +562,13 @@ function computeIssues() {
     } else if (n.type === 'relationship') {
       const count = nb.filter(m => m.type === 'entity').length;
       if (count < 2) add(n.id, count ? 'Nur mit einer Entity verbunden' : 'Mit keiner Entity verbunden');
+      const ids = nb.filter(m => m.type === 'entity').map(m => m.id);
+      const recursive = ids.some((id, i) => ids.indexOf(id) !== i);
+      if (recursive && state.edges.some(e => (e.from === n.id || e.to === n.id) && !e.role)) {
+        add(n.id, 'Rekursive Beziehung: Rollennamen an den Kanten fehlen');
+      }
       if (nb.some(m => m.type === 'relationship')) add(n.id, 'Direkt mit einer Beziehung verbunden');
-    } else if (!nb.length) {
+    } else if (n.type === 'attribute' && !nb.length) {
       add(n.id, 'Attribut ist nicht verbunden');
     }
   }
@@ -479,7 +596,7 @@ function el(tag, attrs, parent) {
 // Alle Änderungen eines Bildes werden gesammelt und einmal pro Bildschirm-Aktualisierung gezeichnet
 const nodeEls = new Map();
 const edgeEls = new Map();
-const pending = { nodes: new Set(), edges: new Set(), selection: false, view: false };
+const pending = { nodes: new Set(), edges: new Set(), selection: false, view: false, minimap: false };
 let frameQueued = false;
 
 function requestFrame() {
@@ -498,7 +615,9 @@ function flushFrame() {
     renderBadges();
     renderOverlay();
     if (editing) positionInline();
+    pending.minimap = true;
   }
+  if (pending.minimap) drawMinimap();
 }
 
 // Nur bewegte Knoten und ihre Kanten neu zeichnen
@@ -514,6 +633,7 @@ function redrawParts() {
   pending.nodes.clear();
   pending.edges.clear();
   renderBadges();
+  pending.minimap = true;
 }
 
 // Auswahl ohne Neuaufbau: nur Markierungen umschalten
@@ -545,25 +665,173 @@ function render() {
   issuesBtn.classList.toggle('has-issues', count > 0);
   $('#issues-count').textContent = count;
   issuesBtn.title = count ? `${count} ${count === 1 ? 'Hinweis' : 'Hinweise'} – klicken springt zum nächsten` : 'Keine Hinweise';
+  emptyState.hidden = state.nodes.length > 0;
+  if (searchHits.length || !searchBox.hidden) markSearchHits();
+  pending.minimap = true;
+  requestFrame();
 }
+
+/* ================= Übersichtskarte ================= */
+
+const MINIMAP_COLORS = { entity: '--d-entity-stroke', relationship: '--d-rel-stroke', attribute: '--d-attr-stroke', note: '--d-note-stroke' };
+let minimapFrame = null;   // Abbildung Welt -> Karte der letzten Zeichnung
+let minimapColors = null;  // aus CSS gelesen; beim Designwechsel verworfen
+let minimapLast = 0;
+// Größen merken statt bei jedem Bild abzufragen – das Abfragen erzwingt ein komplettes Layout
+let canvasSize = { width: 0, height: 0 };
+let minimapSize = { width: 180, height: 116 };
+const sizeObserver = new ResizeObserver(entries => {
+  for (const entry of entries) {
+    const { width, height } = entry.contentRect;
+    if (entry.target === svg) canvasSize = { width, height };
+    else if (width && height) minimapSize = { width, height };
+  }
+  pending.minimap = true;
+  requestFrame();
+});
+sizeObserver.observe(svg);
+sizeObserver.observe(minimap);
+
+function drawMinimap() {
+  // Beim Ziehen reichen etwa zehn Aktualisierungen pro Sekunde
+  const now = performance.now();
+  if (drag && now - minimapLast < 100) { requestFrame(); return; }
+  minimapLast = now;
+  pending.minimap = false;
+  const show = prefs.minimap && state.nodes.length > 0;
+  if (minimap.hidden === show) minimap.hidden = !show;
+  if (!show) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cw = minimapSize.width, ch = minimapSize.height;
+  if (minimap.width !== cw * dpr) { minimap.width = cw * dpr; minimap.height = ch * dpr; }
+  const ctx = minimap.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  // sichtbarer Ausschnitt in Weltkoordinaten
+  const r = canvasSize;
+  const vis = { x: -view.x / view.k, y: -view.y / view.k, w: r.width / view.k, h: r.height / view.k };
+  const b = bounds(40);
+  const x1 = Math.min(b.x, vis.x), y1 = Math.min(b.y, vis.y);
+  const x2 = Math.max(b.x + b.w, vis.x + vis.w), y2 = Math.max(b.y + b.h, vis.y + vis.h);
+  const scale = Math.min((cw - 8) / (x2 - x1), (ch - 8) / (y2 - y1));
+  const ox = (cw - (x2 - x1) * scale) / 2 - x1 * scale, oy = (ch - (y2 - y1) * scale) / 2 - y1 * scale;
+  minimapFrame = { scale, ox, oy };
+  if (!minimapColors) {
+    const css = getComputedStyle(document.documentElement);
+    minimapColors = { accent: css.getPropertyValue('--accent').trim() };
+    for (const [type, name] of Object.entries(MINIMAP_COLORS)) minimapColors[type] = css.getPropertyValue(name).trim() || '#888';
+  }
+  for (const n of state.nodes) {
+    const { w, h } = nodeSize(n);
+    ctx.fillStyle = minimapColors[n.type];
+    ctx.globalAlpha = isSelected('node', n.id) ? 1 : 0.6;
+    ctx.fillRect(n.x * scale + ox - (w * scale) / 2, n.y * scale + oy - (h * scale) / 2, Math.max(2, w * scale), Math.max(2, h * scale));
+  }
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = minimapColors.accent;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(vis.x * scale + ox, vis.y * scale + oy, vis.w * scale, vis.h * scale);
+}
+
+// Klick oder Ziehen in der Karte zentriert die Ansicht dort
+function minimapPan(ev) {
+  if (!minimapFrame) return;
+  const rect = minimap.getBoundingClientRect();
+  const wx = (ev.clientX - rect.left - minimapFrame.ox) / minimapFrame.scale;
+  const wy = (ev.clientY - rect.top - minimapFrame.oy) / minimapFrame.scale;
+  const r = svg.getBoundingClientRect();
+  view.x = r.width / 2 - wx * view.k;
+  view.y = r.height / 2 - wy * view.k;
+  viewChanged();
+}
+minimap.addEventListener('pointerdown', ev => {
+  ev.preventDefault();
+  minimap.setPointerCapture(ev.pointerId);
+  minimapPan(ev);
+});
+minimap.addEventListener('pointermove', ev => { if (ev.buttons) minimapPan(ev); });
+
+/* ================= Suchen ================= */
+
+let searchHits = [];
+let searchIndex = -1;
+
+function openSearch() {
+  closeMenu();
+  endEdit(false);
+  searchBox.hidden = false;
+  searchInput.focus();
+  searchInput.select();
+  runSearch();
+}
+
+function closeSearch() {
+  searchBox.hidden = true;
+  searchHits = [];
+  markSearchHits();
+}
+
+function runSearch() {
+  const q = searchInput.value.trim().toLowerCase();
+  searchHits = q ? state.nodes.filter(n => (n.name || '').toLowerCase().includes(q)) : [];
+  searchIndex = searchHits.length ? 0 : -1;
+  markSearchHits();
+  if (searchHits.length) showSearchHit();
+  else $('#search-count').textContent = q ? 'Keine Treffer' : '';
+}
+
+function showSearchHit() {
+  const n = searchHits[searchIndex];
+  $('#search-count').textContent = `${searchIndex + 1} von ${searchHits.length}`;
+  select({ kind: 'node', id: n.id });
+  centerOn(n);
+}
+
+function stepSearch(dir) {
+  if (!searchHits.length) return;
+  searchIndex = (searchIndex + dir + searchHits.length) % searchHits.length;
+  showSearchHit();
+}
+
+function markSearchHits() {
+  const ids = new Set(searchHits.map(n => n.id));
+  const active = !searchBox.hidden && searchInput.value.trim() !== '';
+  svg.classList.toggle('searching', active);
+  for (const [id, g] of nodeEls) g.classList.toggle('match', active && ids.has(id));
+}
+
+searchInput.addEventListener('input', runSearch);
+searchInput.addEventListener('keydown', ev => {
+  ev.stopPropagation();
+  if (ev.key === 'Enter') { ev.preventDefault(); stepSearch(ev.shiftKey ? -1 : 1); }
+  if (ev.key === 'Escape') { ev.preventDefault(); closeSearch(); }
+});
+searchBox.addEventListener('click', ev => {
+  if (ev.target.closest('[data-search-next]')) stepSearch(1);
+  if (ev.target.closest('[data-search-prev]')) stepSearch(-1);
+  if (ev.target.closest('[data-search-close]')) closeSearch();
+});
 
 function drawEdge(e) {
   const geo = edgeGeometry(e);
   if (!geo) return;
   const { p, q } = geo;
-  const g = el('g', { class: 'edge' + (isSelected('edge', e.id) ? ' selected' : ''), 'data-edge': e.id });
+  const noteLink = geo.a.type === 'note' || geo.b.type === 'note';
+  const g = el('g', { class: 'edge' + (noteLink ? ' note-link' : '') + (isSelected('edge', e.id) ? ' selected' : ''), 'data-edge': e.id });
   const old = edgeEls.get(e.id);
   if (old && old.parentNode) old.replaceWith(g); else gEdges.appendChild(g);
   edgeEls.set(e.id, g);
-  el('line', { class: 'hit', x1: p.x, y1: p.y, x2: q.x, y2: q.y }, g);
-  if (e.total) {
-    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
-    const ox = -(q.y - p.y) / len * 2.4, oy = (q.x - p.x) / len * 2.4;
-    for (const s of [1, -1]) {
-      el('line', { class: 'stroke', x1: p.x + ox * s, y1: p.y + oy * s, x2: q.x + ox * s, y2: q.y + oy * s }, g);
-    }
-  } else {
-    el('line', { class: 'stroke', x1: p.x, y1: p.y, x2: q.x, y2: q.y }, g);
+  const c = geo.c;
+  const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+  const ox = -(q.y - p.y) / len * 2.4, oy = (q.x - p.x) / len * 2.4;
+  const segment = (cls, s) => (c
+    ? el('path', { class: cls, d: `M${p.x + ox * s} ${p.y + oy * s} Q${c.x + ox * s} ${c.y + oy * s} ${q.x + ox * s} ${q.y + oy * s}` }, g)
+    : el('line', { class: cls, x1: p.x + ox * s, y1: p.y + oy * s, x2: q.x + ox * s, y2: q.y + oy * s }, g));
+  segment('hit', 0);
+  if (e.total) { segment('stroke', 1); segment('stroke', -1); } else segment('stroke', 0);
+  if (e.role) {
+    const pos = rolePosition(geo);
+    el('text', { class: 'role', x: pos.x, y: pos.y, 'data-role': e.id }, g).textContent = e.role;
   }
   if (e.label) {
     const pos = labelPosition(e, geo);
@@ -582,6 +850,8 @@ function drawNode(n) {
   if (isSelected('node', n.id)) cls.push('selected');
   if (connectFrom === n.id) cls.push('source');
   if (dropTarget === n.id) cls.push('target');
+  if (n.color && COLORS[n.color]) cls.push('c-' + n.color);
+  if (n.locked) cls.push('locked');
   const g = el('g', { class: cls.join(' '), 'data-node': n.id, transform: `translate(${n.x} ${n.y})` }, gNodes);
   nodeEls.set(n.id, g);
 
@@ -591,6 +861,15 @@ function drawNode(n) {
   } else if (n.type === 'relationship') {
     el('polygon', { class: 'shape', points: diamond(hw, hh) }, g);
     if (n.weak) el('polygon', { class: 'shape', points: diamond(hw - 12, hh - 7) }, g);
+  } else if (n.type === 'note') {
+    const f = 12;  // umgeknickte Ecke
+    el('path', { class: 'shape', d: `M${-hw} ${-hh}H${hw - f}L${hw} ${-hh + f}V${hh}H${-hw}Z` }, g);
+    el('path', { class: 'fold', d: `M${hw - f} ${-hh}V${-hh + f}H${hw}` }, g);
+    const text = el('text', { class: 'note-text', x: -hw + 14, y: -hh + 20 }, g);
+    (n.name || ' ').split('\n').forEach((line, i) => {
+      el('tspan', { x: -hw + 14, dy: i ? 18 : 0 }, text).textContent = line || ' ';
+    });
+    return;
   } else {
     const dash = n.derived ? ' dashed' : '';
     el('ellipse', { class: 'shape' + dash, rx: hw, ry: hh }, g);
@@ -608,6 +887,15 @@ function drawNode(n) {
 // Warnsymbole an Elementen mit Hinweisen (nicht Teil des Exports)
 function renderBadges() {
   gBadges.textContent = '';
+  for (const n of state.nodes) {
+    if (!n.locked) continue;
+    const { w, h } = nodeSize(n);
+    const f = n.type === 'relationship' ? 0.55 : n.type === 'attribute' ? 0.72 : 1;
+    const g = el('g', { class: 'lock', transform: `translate(${n.x - (w / 2) * f} ${n.y - (h / 2) * f}) scale(${1 / view.k})` }, gBadges);
+    el('circle', { r: 8 }, g);
+    el('rect', { x: -3.5, y: -1, width: 7, height: 5.5, rx: 1 }, g);
+    el('path', { d: 'M-2 -1V-3a2 2 0 0 1 4 0V-1' }, g);
+  }
   if (!prefs.hints) return;
   for (const [id] of issues) {
     const n = nodeById(id);
@@ -643,10 +931,19 @@ function renderOverlay() {
     el('circle', { class: 'handle-hit', r: 10 }, hg);
     el('circle', { class: 'handle-dot', r: 4.5 }, hg);
   }
-  const pills = QUICK[n.type].map(([type, label]) => ({ type, label, w: textWidth(label, PILL_FONT) + 20 }));
+  const pills = (QUICK[n.type] || []).map(([type, label]) => ({ type, label, w: textWidth(label, PILL_FONT) + 20 }));
   const gap = 6;
-  let x = -(pills.reduce((s, p) => s + p.w, 0) + gap * (pills.length - 1)) / 2;
-  const y = -hh - off - 34;
+  const total = pills.reduce((s, p) => s + p.w, 0) + gap * (pills.length - 1);
+  let x = -total / 2;
+  // Oben, außer dort liegt etwas im Weg – dann unten (Bildschirm-Einheiten relativ zum Knoten)
+  const overlaps = yRow => state.nodes.filter(m => {
+    if (m.id === n.id) return false;
+    const s = nodeSize(m);
+    const rx1 = n.x + x / k, rx2 = n.x + (x + total) / k, ry1 = n.y + yRow / k, ry2 = n.y + (yRow + 24) / k;
+    return m.x + s.w / 2 > rx1 && m.x - s.w / 2 < rx2 && m.y + s.h / 2 > ry1 && m.y - s.h / 2 < ry2;
+  }).length;
+  const top = -hh - off - 34, bottom = hh + off + 10;
+  const y = pills.length && overlaps(top) > 0 && overlaps(bottom) < overlaps(top) ? bottom : top;
   for (const pill of pills) {
     const pg = el('g', { class: 'quick', 'data-quick': pill.type, 'data-owner': n.id, transform: `translate(${x} ${y})` }, g);
     el('rect', { width: pill.w, height: 24, rx: 12 }, pg);
@@ -779,7 +1076,7 @@ function makeNode(type, p) {
     type: type === 'key' ? 'attribute' : type,
     x: snap(p.x),
     y: snap(p.y),
-    name: type === 'key' ? 'ID' : TYPES[type],
+    name: type === 'key' ? 'ID' : NODE_TYPES[type],
   };
   if (type === 'key') n.key = true;
   return n;
@@ -821,17 +1118,18 @@ function freeSpot(a, type) {
   return { x: a.x + as.w / 2 + 140, y: a.y };
 }
 
-function quickAdd(anchorId, type) {
+function quickAdd(anchorId, type, opts = {}) {
   const a = nodeById(anchorId);
   if (!a) return;
   const before = snapshot();
   const n = makeNode(type, freeSpot(a, type));
   state.nodes.push(n);
   state.edges.push({ id: nextId++, from: a.id, to: n.id, label: '' });
-  commit(before);
+  // In der Schnelleingabe wird Anlegen und Benennen gemeinsam übernommen (Esc entfernt das neue Attribut wieder)
+  if (!opts.chain) commit(before);
   // Bei Attributen bleibt die Auswahl beim Element, damit weitere direkt folgen können
   select({ kind: 'node', id: n.type === 'attribute' ? a.id : n.id });
-  startEdit('node', n.id);
+  startEdit('node', n.id, 'name', opts.chain ? { chain: a.id, before } : {});
 }
 
 function createPartner(fromId, p) {
@@ -855,10 +1153,13 @@ function addEdge(from, to) {
   rubber.setAttribute('visibility', 'hidden');
   updateHint();
   if (from === to) { render(); return; }
-  const exists = state.edges.some(e => (e.from === from && e.to === to) || (e.from === to && e.to === from));
-  if (exists) {
+  const count = state.edges.filter(e => (e.from === from && e.to === to) || (e.from === to && e.to === from)).length;
+  const types = [nodeById(from)?.type, nodeById(to)?.type].sort().join();
+  // Eine Beziehung darf dieselbe Entity zweimal verbinden (rekursiv, z. B. „Mitarbeiter leitet Mitarbeiter“)
+  const allowed = types === 'entity,relationship' ? 2 : 1;
+  if (count >= allowed) {
     render();
-    flashHint('Diese Elemente sind bereits verbunden.');
+    flashHint(allowed > 1 ? 'Mehr als zwei Kanten zwischen Beziehung und Entity sind nicht möglich.' : 'Diese Elemente sind bereits verbunden.');
     return;
   }
   const before = snapshot();
@@ -869,7 +1170,9 @@ function addEdge(from, to) {
 }
 
 function deleteSelected() {
-  const items = currentSelection();
+  const all = currentSelection();
+  const items = all.filter(s => s.kind !== 'node' || !nodeById(s.id)?.locked);
+  if (items.length < all.length) flashHint('Gesperrte Elemente bleiben erhalten – zum Löschen erst entsperren.');
   if (!items.length) return;
   const before = snapshot();
   const nodeIds = new Set(items.filter(s => s.kind === 'node').map(s => s.id));
@@ -887,6 +1190,28 @@ function changeType(n, type) {
   commit(before);
   render();
   renderPanel();
+}
+
+function setColor(color) {
+  const nodes = selectedNodes();
+  if (!nodes.length) return;
+  const before = snapshot();
+  for (const n of nodes) { if (color) n.color = color; else delete n.color; }
+  commit(before);
+  render();
+  renderPanel();
+}
+
+function toggleLock() {
+  const nodes = selectedNodes();
+  if (!nodes.length) return;
+  const before = snapshot();
+  const lock = nodes.some(n => !n.locked);
+  for (const n of nodes) { if (lock) n.locked = true; else delete n.locked; }
+  commit(before);
+  render();
+  renderPanel();
+  flashHint(lock ? 'Gesperrt – lässt sich nicht verschieben oder löschen' : 'Entsperrt');
 }
 
 function toggleFlag(obj, flag) {
@@ -934,6 +1259,7 @@ function arrangeAttributes(id) {
     pos = place(rx, ry, span);
   }
   attrs.forEach((m, i) => {
+    if (m.locked) return;
     const { x: nx, y: ny } = pos[i];
     const dx = nx - m.x, dy = ny - m.y;
     for (const sub of neighbors(m)) {
@@ -947,7 +1273,7 @@ function arrangeAttributes(id) {
 }
 
 function alignSelection(axis) {
-  const nodes = selectedNodes();
+  const nodes = selectedNodes().filter(n => !n.locked);
   if (nodes.length < 2) return;
   const key = axis === 'h' ? 'y' : 'x';
   const before = snapshot();
@@ -959,7 +1285,7 @@ function alignSelection(axis) {
 
 function distributeSelection(axis) {
   const key = axis === 'h' ? 'x' : 'y';
-  const nodes = selectedNodes().sort((a, b) => a[key] - b[key]);
+  const nodes = selectedNodes().filter(n => !n.locked).sort((a, b) => a[key] - b[key]);
   if (nodes.length < 3) return;
   const before = snapshot();
   const first = nodes[0][key], step = (nodes[nodes.length - 1][key] - first) / (nodes.length - 1);
@@ -1030,7 +1356,7 @@ function insertData(data, dx, dy) {
   const before = snapshot();
   const ids = new Map(), items = [];
   for (const n of data.nodes) {
-    if (!TYPES[n.type]) continue;
+    if (!NODE_TYPES[n.type]) continue;
     const copy = { ...n, id: nextId++, x: Math.round(+n.x + dx), y: Math.round(+n.y + dy), name: String(n.name ?? '') };
     ids.set(n.id, copy.id);
     state.nodes.push(copy);
@@ -1074,13 +1400,24 @@ document.addEventListener('paste', ev => {
 
 /* ================= Inline-Editor ================= */
 
-function startEdit(kind, id) {
+const EDIT_PLACEHOLDER = { name: 'Name', label: 'z. B. 1, N oder (0,n)', role: 'Rolle, z. B. Vorgesetzter' };
+
+// field: 'name' (Knoten), 'label' (Kardinalität) oder 'role' (Rollenname).
+// opts.chain: Schnelleingabe – Enter legt das nächste Attribut am selben Element an.
+// opts.before: Stand vor dem Anlegen; Abbrechen entfernt dann auch das neue Element.
+function startEdit(kind, id, field, opts = {}) {
   endEdit(false);
   const obj = kind === 'node' ? nodeById(id) : edgeById(id);
   if (!obj) return;
-  editing = { kind, id, before: snapshot(), t: performance.now() };
-  inline.value = kind === 'node' ? obj.name : (obj.label || '');
-  inline.placeholder = kind === 'node' ? 'Name' : 'z. B. 1, N oder (0,n)';
+  field = field || (kind === 'node' ? 'name' : 'label');
+  editing = { kind, id, field, chain: opts.chain ?? null, before: opts.before || snapshot(), t: performance.now() };
+  const note = kind === 'node' && obj.type === 'note';
+  // Schnelleingabe beginnt leer: ein leeres Enter beendet die Kette
+  if (editing.chain != null) obj[field] = '';
+  inline.value = obj[field] || '';
+  inline.placeholder = editing.chain != null ? 'Attribut · Enter: nächstes · * = Schlüssel · Esc: fertig' : EDIT_PLACEHOLDER[field];
+  inline.classList.toggle('multiline', note);
+  inline.rows = note ? Math.max(2, inline.value.split('\n').length) : 1;
   inline.hidden = false;
   renderOverlay();
   positionInline();
@@ -1101,10 +1438,10 @@ function positionInline() {
   const r = svg.getBoundingClientRect();
   let x, y, w;
   if (editing.kind === 'node') {
-    x = obj.x; y = obj.y; w = nodeSize(obj).w * view.k * 0.9;
+    x = obj.x; y = obj.y; w = nodeSize(obj).w * view.k * (obj.type === 'note' ? 1 : 0.9);
   } else {
     const geo = edgeGeometry(obj);
-    ({ x, y } = labelPosition(obj, geo));
+    ({ x, y } = editing.field === 'role' ? rolePosition(geo) : labelPosition(obj, geo));
     w = 140;
   }
   inline.style.left = r.left + view.x + x * view.k + 'px';
@@ -1120,27 +1457,50 @@ function endEdit(cancel) {
   if (cancel) {
     state = JSON.parse(e.before);
   } else {
-    const edge = e.kind === 'edge' && edgeById(e.id);
-    if (edge) edge.label = normalizeLabel(edge.label);
+    const obj = e.kind === 'node' ? nodeById(e.id) : edgeById(e.id);
+    if (obj && e.field === 'label') obj.label = normalizeLabel(obj.label);
+    if (obj && e.field === 'role') obj.role = obj.role.trim();
+    // „*Name“ macht ein Attribut zum Schlüssel
+    if (obj && e.kind === 'node' && obj.type === 'attribute' && /^\*/.test(obj.name)) {
+      obj.name = obj.name.replace(/^\*\s*/, '');
+      obj.key = true;
+      obj.partial = false;
+    }
     commit(e.before);
   }
   render();
   renderPanel();
 }
 
+// Schnelleingabe: nächstes Attribut am selben Element anlegen und direkt benennen
+function quickChain(anchorId) {
+  quickAdd(anchorId, 'attribute', { chain: true });
+}
+
 inline.addEventListener('input', () => {
   if (!editing) return;
   const obj = editing.kind === 'node' ? nodeById(editing.id) : edgeById(editing.id);
   if (!obj) return;
-  if (editing.kind === 'node') obj.name = inline.value;
-  else obj.label = inline.value;
+  obj[editing.field] = inline.value;
+  if (inline.classList.contains('multiline')) inline.rows = Math.max(2, inline.value.split('\n').length);
   render();
   positionInline();
 });
 inline.addEventListener('keydown', ev => {
-  if (ev.key === 'Enter') { ev.preventDefault(); endEdit(false); }
-  if (ev.key === 'Escape') { ev.preventDefault(); endEdit(true); }
   ev.stopPropagation();
+  if (!editing) return;
+  const chain = editing.chain;
+  // In Notizen fügt ⇧Enter eine neue Zeile ein
+  if (ev.key === 'Enter' && ev.shiftKey && inline.classList.contains('multiline')) return;
+  if (ev.key === 'Enter' || (ev.key === 'Tab' && chain != null)) {
+    ev.preventDefault();
+    if (chain == null) { endEdit(false); return; }
+    if (!inline.value.trim()) { endEdit(true); return; }  // leerer Eintrag beendet die Schnelleingabe
+    endEdit(false);
+    quickChain(chain);
+    return;
+  }
+  if (ev.key === 'Escape') { ev.preventDefault(); endEdit(true); }
 });
 inline.addEventListener('blur', () => endEdit(false));
 // Der Rest des Doppelklicks landet auf dem frisch geöffneten Feld – Markierung erhalten
@@ -1188,7 +1548,7 @@ function finishConnect(d, ev) {
   const target = t ? +t.dataset.node : null;
   dropTarget = null;
   if (target != null && target !== d.id) { addEdge(d.id, target); return; }
-  if (d.moved && target == null) { createPartner(d.id, toWorld(ev)); return; }
+  if (d.moved && target == null && PARTNER[nodeById(d.id)?.type]) { createPartner(d.id, toWorld(ev)); return; }
   // Kanten-Werkzeug mit einfachem Klick: Quelle bleibt gewählt, das Ziel folgt per Klick
   if (d.fromHandle || d.moved) cancelConnect();
 }
@@ -1237,7 +1597,8 @@ svg.addEventListener('pointerdown', ev => {
     // Gehört der Knoten zur Mehrfachauswahl, wird die ganze Gruppe verschoben
     const inGroup = multi.some(s => s.kind === 'node' && s.id === id);
     if (!inGroup) select({ kind: 'node', id });
-    const ids = inGroup ? multi.filter(s => s.kind === 'node').map(s => s.id) : [id];
+    const ids = (inGroup ? multi.filter(s => s.kind === 'node').map(s => s.id) : [id]).filter(i => !nodeById(i).locked);
+    if (!ids.length) { if (nodeById(id).locked) flashHint('Gesperrt – zum Verschieben erst entsperren (Rechtsklick).'); return; }
     const origin = ids.map(i => { const n = nodeById(i); return { n, x: n.x, y: n.y }; });
     const moving = new Set(ids);
     const edgeIds = state.edges.filter(e => moving.has(e.from) || moving.has(e.to)).map(e => e.id);
@@ -1370,10 +1731,8 @@ svg.addEventListener('pointermove', ev => {
   } else if (drag.type === 'connect') {
     if (Math.hypot(ev.clientX - drag.sx, ev.clientY - drag.sy) > 6) drag.moved = true;
   } else if (drag.type === 'label') {
-    const e = edgeById(drag.id), geo = edgeGeometry(e);
-    const vx = geo.q.x - geo.p.x, vy = geo.q.y - geo.p.y;
-    const t = ((p.x - geo.p.x) * vx + (p.y - geo.p.y) * vy) / (vx * vx + vy * vy || 1);
-    e.labelT = Math.round(Math.min(0.92, Math.max(0.08, t)) * 1000) / 1000;
+    const e = edgeById(drag.id);
+    e.labelT = Math.round(projectOnEdge(edgeGeometry(e), p) * 1000) / 1000;
     drag.moved = true;
     pending.edges.add(e.id);
     requestFrame();
@@ -1396,6 +1755,7 @@ svg.addEventListener('pointerup', ev => {
   drawGuides([]);
   if ((d.type === 'node' || d.type === 'label') && d.moved) commit(d.before);
   if (d.type === 'connect') finishConnect(d, ev);
+  minimapLast = 0;
   render();  // Anfasser wieder einblenden
 });
 
@@ -1443,13 +1803,18 @@ function zoomReset() {
   zoomAt(1 / view.k, r.width / 2, r.height / 2);
 }
 
-function fit() {
-  const b = bounds(40);
+function fitSelection() {
+  const nodes = selectedNodes();
+  if (nodes.length) fit(nodes); else fit();
+}
+
+function fit(nodes = state.nodes) {
+  const b = bounds(40, nodes);
   const r = svg.getBoundingClientRect();
   if (!r.width || !r.height) {
     // Zeichenfläche noch nicht sichtbar: einpassen, sobald sie eine Größe hat
     const ro = new ResizeObserver(() => {
-      if (svg.clientWidth && svg.clientHeight) { ro.disconnect(); fit(); }
+      if (svg.clientWidth && svg.clientHeight) { ro.disconnect(); fit(nodes); }
     });
     ro.observe(svg);
     return;
@@ -1490,13 +1855,19 @@ function menuForBackground(p) {
   return [
     { label: 'Entity hier einfügen', key: 'Doppelklick', run: () => createNode('entity', p) },
     { label: 'Beziehung hier einfügen', run: () => createNode('relationship', p) },
+    { label: 'Notiz hier einfügen', run: () => createNode('note', p) },
     { label: 'Hier einsetzen', key: `${MOD}V`, disabled: !readClipboard(), run: () => pasteClipboard(p) },
+    { label: 'Diagramm als Bild kopieren', key: `⇧${MOD}C`, run: copyImage },
+    { label: 'Relationenmodell & SQL …', run: showRelational },
     '-',
     { label: 'Alles auswählen', key: `${MOD}A`, run: selectAll },
-    { label: 'Alles einpassen', key: 'F', run: fit },
+    { label: 'Alles einpassen', key: 'F', run: () => fit() },
+    { label: 'Suchen …', key: `${MOD}F`, run: openSearch },
+    { label: 'Drucken / PDF …', key: `${MOD}P`, run: printDiagram },
     '-',
     { label: 'Am Raster einrasten', checked: prefs.snap, run: () => setPref('snap', !prefs.snap) },
     { label: 'Hinweise anzeigen', checked: prefs.hints, run: () => setPref('hints', !prefs.hints) },
+    { label: 'Übersichtskarte anzeigen', checked: prefs.minimap, run: () => setPref('minimap', !prefs.minimap) },
     '-',
     ...Object.entries(THEME_LABEL).map(([value, label]) => (
       { label: `Design: ${label}`, checked: prefs.theme === value, run: () => setPref('theme', value) }
@@ -1505,26 +1876,29 @@ function menuForBackground(p) {
 }
 
 function menuForNode(n) {
-  const items = [{ label: 'Umbenennen', key: 'Enter', run: () => startEdit('node', n.id) }];
-  for (const [type] of QUICK[n.type]) {
+  const items = [{ label: n.type === 'note' ? 'Text bearbeiten' : 'Umbenennen', key: 'Enter', run: () => startEdit('node', n.id) }];
+  for (const [type] of QUICK[n.type] || []) {
     const label = n.type === 'attribute' ? 'Teilattribut hinzufügen' : QUICK_MENU[type];
     items.push({ label, run: () => quickAdd(n.id, type) });
   }
-  if (n.type !== 'attribute') {
+  if (n.type === 'entity' || n.type === 'relationship') {
     const has = neighbors(n).some(m => m.type === 'attribute');
     items.push({ label: 'Attribute anordnen', disabled: !has, run: () => arrangeAttributes(n.id) });
   }
   items.push('-');
-  for (const [type, label] of Object.entries(TYPES)) {
-    if (type !== n.type) items.push({ label: `In ${label} umwandeln`, run: () => changeType(n, type) });
+  if (n.type !== 'note') {
+    for (const [type, label] of Object.entries(TYPES)) {
+      if (type !== n.type) items.push({ label: `In ${label} umwandeln`, run: () => changeType(n, type) });
+    }
   }
-  items.push('-', ...clipboardItems(), '-', { label: 'Löschen', key: 'Entf', danger: true, run: deleteSelected });
+  items.push('-', ...clipboardItems(), lockItem(), '-', { label: 'Löschen', key: 'Entf', danger: true, run: deleteSelected });
   return items;
 }
 
 function menuForEdge(e) {
   return [
     { label: 'Beschriften', key: 'Enter', run: () => startEdit('edge', e.id) },
+    { label: 'Rolle benennen', run: () => startEdit('edge', e.id, 'role') },
     { label: 'Totale Teilnahme', checked: Boolean(e.total), run: () => toggleFlag(e, 'total') },
     {
       label: 'Beschriftung an Standardposition', disabled: !Number.isFinite(e.labelT),
@@ -1539,6 +1913,7 @@ function menuForMulti() {
   const count = selectedNodes().length;
   return [
     ...clipboardItems(),
+    lockItem(),
     '-',
     { label: 'Auf gleiche Höhe bringen', disabled: count < 2, run: () => alignSelection('h') },
     { label: 'Untereinander ausrichten', disabled: count < 2, run: () => alignSelection('v') },
@@ -1549,9 +1924,16 @@ function menuForMulti() {
   ];
 }
 
+function lockItem() {
+  const nodes = selectedNodes();
+  return { label: nodes.length && nodes.every(n => n.locked) ? 'Entsperren' : 'Sperren', disabled: !nodes.length, run: toggleLock };
+}
+
 function clipboardItems() {
   const none = !selectedNodes().length;
   return [
+    { label: 'Auf Auswahl zoomen', key: '⇧F', disabled: none, run: fitSelection },
+    { label: 'Als Bild kopieren', key: `⇧${MOD}C`, run: copyImage },
     { label: 'Kopieren', key: `${MOD}C`, disabled: none, run: () => copySelection(false) },
     { label: 'Ausschneiden', key: `${MOD}X`, disabled: none, run: () => copySelection(true) },
     { label: 'Duplizieren', key: `${MOD}D`, disabled: none, run: duplicateSelection },
@@ -1616,6 +1998,9 @@ document.addEventListener('keydown', ev => {
   if (mod && key === 's') { ev.preventDefault(); COMMANDS.save(); return; }
   if (mod && key === 'o') { ev.preventDefault(); COMMANDS.open(); return; }
   if (mod && key === 'a') { ev.preventDefault(); selectAll(); return; }
+  if (mod && key === 'f') { ev.preventDefault(); openSearch(); return; }
+  if (mod && key === 'p') { ev.preventDefault(); printDiagram(); return; }
+  if (mod && ev.shiftKey && key === 'c') { ev.preventDefault(); copyImage(); return; }
   if (mod && key === 'c') { if (copySelection(false)) ev.preventDefault(); return; }
   if (mod && key === 'x') { if (copySelection(true)) ev.preventDefault(); return; }
   if (mod && key === 'v') { if (readClipboard()) { ev.preventDefault(); pasteClipboard(); } return; }
@@ -1631,8 +2016,18 @@ document.addEventListener('keydown', ev => {
     return;
   }
   if (ev.key === 'Enter' && selected) { ev.preventDefault(); startEdit(selected.kind, selected.id); return; }
+  // Tab: Schnelleingabe von Attributen am ausgewählten Element (bei Attributen am selben Besitzer)
+  if (ev.key === 'Tab' && selected && selected.kind === 'node') {
+    ev.preventDefault();
+    const n = nodeById(selected.id);
+    if (!n || n.type === 'note') return;
+    const owner = n.type === 'attribute' ? (neighbors(n).find(m => m.type !== 'attribute') || n) : n;
+    quickChain(owner.id);
+    flashHint('Schnelleingabe: Enter → nächstes Attribut · * am Anfang = Schlüssel · Esc beendet');
+    return;
+  }
 
-  const movable = selectedNodes();
+  const movable = selectedNodes().filter(n => !n.locked);
   if (ev.key.startsWith('Arrow') && movable.length) {
     ev.preventDefault();
     const step = ev.shiftKey ? GRID * 2 : 1;
@@ -1648,9 +2043,9 @@ document.addEventListener('keydown', ev => {
     return;
   }
 
-  const tools = { v: 'select', e: 'entity', r: 'relationship', a: 'attribute', k: 'key', c: 'connect' };
+  const tools = { v: 'select', e: 'entity', r: 'relationship', a: 'attribute', k: 'key', n: 'note', c: 'connect' };
   if (tools[key]) setTool(tools[key]);
-  if (key === 'f') fit();
+  if (key === 'f') { if (ev.shiftKey) fitSelection(); else fit(); }
   if (key === '+' || key === '=') zoomCenter(1.2);
   if (key === '-') zoomCenter(1 / 1.2);
 });
@@ -1672,16 +2067,21 @@ const HELP_HTML = `
       <li>Beziehung <kbd>R</kbd></li>
       <li>Attribut <kbd>A</kbd></li>
       <li>Schlüssel <kbd>K</kbd></li>
+      <li>Notiz <kbd>N</kbd></li>
       <li>Kante <kbd>C</kbd></li>
       <li>Umbenennen <kbd>Enter</kbd></li>
       <li>Mehrfachauswahl <kbd>Rahmen / ⇧ Klick</kbd></li>
       <li>Alles auswählen <kbd>${MOD}A</kbd></li>
       <li>Kopieren / Einsetzen <kbd>${MOD}C / ${MOD}V</kbd></li>
       <li>Duplizieren <kbd>${MOD}D</kbd></li>
+      <li>Als Bild kopieren <kbd>⇧${MOD}C</kbd></li>
+      <li>Attribute schnell eingeben <kbd>Tab</kbd></li>
       <li>Löschen <kbd>Entf</kbd></li>
       <li>Rückgängig <kbd>${MOD}Z</kbd></li>
       <li>Ohne Einrasten ziehen <kbd>${IS_MAC ? '⌥' : 'Alt'}</kbd></li>
-      <li>Alles einpassen <kbd>F</kbd></li>
+      <li>Alles einpassen / Auswahl <kbd>F / ⇧F</kbd></li>
+      <li>Suchen <kbd>${MOD}F</kbd></li>
+      <li>Drucken / PDF <kbd>${MOD}P</kbd></li>
       <li>Ansicht ziehen <kbd>Leertaste</kbd></li>
       <li>Zoomen <kbd>${MOD} Scroll</kbd></li>
     </ul>
@@ -1689,6 +2089,14 @@ const HELP_HTML = `
   </div>`;
 
 let panelBefore = null;
+
+function swatchesHTML(current) {
+  return `<div class="field"><span>Farbe</span><div class="swatches">${['', ...Object.keys(COLORS)].map(c => {
+    const title = c ? COLORS[c][0] : 'Standard';
+    const style = c ? ` style="--sw: rgb(${COLORS[c][1]})"` : '';
+    return `<button data-color="${c}" title="${title}" aria-label="Farbe ${title}" aria-pressed="${(current || '') === c}"${style}></button>`;
+  }).join('')}</div></div>`;
+}
 
 function issuesHTML(id) {
   const list = issues.get(id);
@@ -1712,24 +2120,38 @@ function renderPanel() {
         <button data-action="duplicate">Duplizieren</button>
         <button data-action="align-h" ${nodes < 2 ? 'disabled' : ''}>Gleiche Höhe</button>
         <button data-action="align-v" ${nodes < 2 ? 'disabled' : ''}>Untereinander</button>
+        <button data-action="fit-selection">Hinzoomen</button>
+        <button data-action="lock" ${nodes ? '' : 'disabled'}>${nodes && selectedNodes().every(n => n.locked) ? 'Entsperren' : 'Sperren'}</button>
       </div>
+      ${nodes ? swatchesHTML(null) : ''}
       <button class="danger" data-action="delete">Alle löschen</button>`;
     return;
   }
   if (!obj) { panel.innerHTML = HELP_HTML; return; }
 
   const isNode = selected.kind === 'node';
-  const flags = FLAGS[isNode ? obj.type : 'edge'];
+  const flags = FLAGS[isNode ? obj.type : 'edge'] || [];
   const flagHTML = flags.map(([prop, label, sub]) => `
     <label class="check"><input type="checkbox" data-flag="${prop}">
       <span>${label}<small>${sub}</small></span></label>`).join('');
 
-  if (isNode) {
+  const lockHTML = `<label class="check"><input type="checkbox" data-flag="locked">
+      <span>Gesperrt<small>Nicht verschieben oder löschen</small></span></label>`;
+
+  if (isNode && obj.type === 'note') {
+    panel.innerHTML = `
+      <h2>Notiz</h2>
+      <label class="field"><span>Text</span><textarea data-text="name" rows="5" autocomplete="off"></textarea></label>
+      ${swatchesHTML(obj.color)}
+      ${lockHTML}
+      <div class="help"><p>Notizen gehören nicht zum ER-Modell und werden bei Hinweisen und Tabellen ignoriert.</p></div>
+      <button class="danger" data-action="delete">Löschen</button>`;
+  } else if (isNode) {
     const degree = state.edges.filter(e => e.from === obj.id || e.to === obj.id).length;
     const hasAttrs = neighbors(obj).some(m => m.type === 'attribute');
     const quick = QUICK[obj.type].map(([type, label]) => `<button data-quick="${type}">${label}</button>`).join('');
     panel.innerHTML = `
-      <h2>${TYPES[obj.type]}</h2>
+      <h2>${NODE_TYPES[obj.type]}</h2>
       ${issuesHTML(obj.id)}
       <label class="field"><span>Name</span><input type="text" data-text="name" autocomplete="off"></label>
       <label class="field"><span>Typ</span><select data-type>
@@ -1738,6 +2160,8 @@ function renderPanel() {
       ${flagHTML}
       <div class="field"><span>Hinzufügen</span><div class="actions">${quick}</div></div>
       ${obj.type !== 'attribute' ? `<button class="wide" data-action="arrange" ${hasAttrs ? '' : 'disabled'}>Attribute anordnen</button>` : ''}
+      ${swatchesHTML(obj.color)}
+      ${lockHTML}
       <div class="info">${degree} ${degree === 1 ? 'Verbindung' : 'Verbindungen'}</div>
       <button class="danger" data-action="delete">Löschen</button>`;
     $('[data-type]', panel).value = obj.type;
@@ -1749,6 +2173,7 @@ function renderPanel() {
         ${LABEL_PRESETS.map(l => `<button data-preset="${l}" aria-pressed="${obj.label === l}">${l}</button>`).join('')}
         <button data-preset="" title="Beschriftung entfernen">✕</button>
       </div>
+      <label class="field"><span>Rolle</span><input type="text" data-text="role" autocomplete="off" placeholder="z. B. Vorgesetzter (bei rekursiven Beziehungen)"></label>
       ${flagHTML}
       <div class="help"><p>Die Beschriftung lässt sich entlang der Kante verschieben.</p></div>
       ${Number.isFinite(obj.labelT) ? '<button class="wide" data-action="label-reset">Beschriftung an Standardposition</button>' : ''}
@@ -1758,8 +2183,7 @@ function renderPanel() {
     $('[data-ends]', panel).textContent = `${a?.name || '?'}  —  ${b?.name || '?'}`;
   }
 
-  const textInput = $('[data-text]', panel);
-  textInput.value = obj[textInput.dataset.text] || '';
+  panel.querySelectorAll('[data-text]').forEach(i => { i.value = obj[i.dataset.text] || ''; });
   panel.querySelectorAll('[data-flag]').forEach(c => { c.checked = !!obj[c.dataset.flag]; });
 }
 
@@ -1784,7 +2208,11 @@ panel.addEventListener('input', ev => {
   render();
 });
 panel.addEventListener('keydown', ev => {
-  if (ev.target.matches('[data-text]') && (ev.key === 'Enter' || ev.key === 'Escape')) ev.target.blur();
+  if (!ev.target.matches('[data-text]')) return;
+  if (ev.key === 'Escape' || (ev.key === 'Enter' && !(ev.shiftKey && ev.target.tagName === 'TEXTAREA'))) {
+    ev.preventDefault();
+    ev.target.blur();
+  }
 });
 
 panel.addEventListener('change', ev => {
@@ -1808,6 +2236,9 @@ panel.addEventListener('click', ev => {
   const action = btn.dataset.action;
   if (action === 'delete') { deleteSelected(); return; }
   if (action === 'changelog') { showChangelog(); return; }
+  if (action === 'fit-selection') { fitSelection(); return; }
+  if (action === 'lock') { toggleLock(); return; }
+  if ('color' in btn.dataset) { setColor(btn.dataset.color); return; }
   if (action === 'duplicate') { duplicateSelection(); return; }
   if (action === 'align-h') { alignSelection('h'); return; }
   if (action === 'align-v') { alignSelection('v'); return; }
@@ -1860,13 +2291,19 @@ function saveJSON() {
 function loadData(data) {
   if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error('Kein gültiges ER-Diagramm.');
   const nodes = data.nodes
-    .filter(n => n && Number.isFinite(n.id) && TYPES[n.type])
-    .map(n => ({ ...n, x: +n.x || 0, y: +n.y || 0, name: String(n.name ?? '') }));
+    .filter(n => n && Number.isFinite(n.id) && NODE_TYPES[n.type])
+    .map(n => {
+      const node = { ...n, x: +n.x || 0, y: +n.y || 0, name: String(n.name ?? '') };
+      if (!COLORS[node.color]) delete node.color;
+      if (!node.locked) delete node.locked;
+      return node;
+    });
   const ids = new Set(nodes.map(n => n.id));
   const edges = data.edges
     .filter(e => e && Number.isFinite(e.id) && ids.has(e.from) && ids.has(e.to))
     .map(e => {
       const edge = { ...e, label: normalizeLabel(String(e.label ?? '')) };
+      if (edge.role != null) edge.role = String(edge.role);
       if (!(Number.isFinite(edge.labelT) && edge.labelT >= 0 && edge.labelT <= 1)) delete edge.labelT;
       return edge;
     });
@@ -1890,19 +2327,89 @@ fileInput.addEventListener('change', async () => {
   }
 });
 
-function exportSVGMarkup() {
+// onlySelection: nur die ausgewählten Elemente und die Kanten zwischen ihnen
+function exportSVGMarkup(onlySelection) {
+  const ids = onlySelection ? new Set(selectedNodes().map(n => n.id)) : null;
   const sel = selected, group = multi, src = connectFrom;
   selected = null; multi = []; connectFrom = null;
   render();
-  const b = bounds(30) || { x: 0, y: 0, w: 100, h: 100 };
+  const nodes = ids ? state.nodes.filter(n => ids.has(n.id)) : state.nodes;
+  const edges = ids ? state.edges.filter(e => ids.has(e.from) && ids.has(e.to)) : state.edges;
+  const b = bounds(30, nodes) || { x: 0, y: 0, w: 100, h: 100 };
   const markup =
     `<svg xmlns="${SVGNS}" width="${Math.ceil(b.w)}" height="${Math.ceil(b.h)}" viewBox="${b.x} ${b.y} ${b.w} ${b.h}">` +
     `<style>${DIAGRAM_CSS}</style>` +
     `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#ffffff"/>` +
-    gEdges.outerHTML + gNodes.outerHTML + '</svg>';
+    `<g>${edges.map(e => edgeEls.get(e.id)?.outerHTML || '').join('')}</g>` +
+    `<g>${nodes.map(n => nodeEls.get(n.id)?.outerHTML || '').join('')}</g></svg>`;
   selected = sel; multi = group; connectFrom = src;
   render();
   return { markup, b };
+}
+
+function svgToPng(markup, b, scale = 2) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(b.w * scale);
+      c.height = Math.ceil(b.h * scale);
+      const ctx = c.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, b.w, b.h);
+      c.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Bild konnte nicht erzeugt werden'))), 'image/png');
+    };
+    img.onerror = () => reject(new Error('Bild konnte nicht erzeugt werden'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  });
+}
+
+const blobToBase64 = blob => new Promise(resolve => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1]);
+  reader.readAsDataURL(blob);
+});
+
+// Diagramm bzw. Auswahl als Bild in die Zwischenablage (zum Einfügen in Word, Pages, Keynote …)
+function copyImage() {
+  if (!state.nodes.length) { flashHint('Das Diagramm ist leer.'); return; }
+  const onlySelection = selectedNodes().length > 0;
+  const { markup, b } = exportSVGMarkup(onlySelection);
+  const what = onlySelection ? 'Auswahl' : 'Diagramm';
+  const png = svgToPng(markup, b);
+  if (NATIVE) {
+    png.then(blobToBase64).then(data => {
+      window.webkit.messageHandlers.er.postMessage({ type: 'copyImage', png: data });
+      flashHint(`${what} als Bild kopiert`);
+    });
+    return;
+  }
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    flashHint('Dieser Browser kann keine Bilder kopieren – bitte „PNG“ verwenden.');
+    return;
+  }
+  // Das Versprechen direkt übergeben: Safari verlangt den Aufruf innerhalb der Benutzeraktion
+  navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    .then(() => flashHint(`${what} als Bild kopiert`))
+    .catch(err => flashHint(err && err.name === 'NotAllowedError'
+      ? 'Der Browser erlaubt hier kein Kopieren von Bildern – bitte „PNG“ verwenden.'
+      : 'Kopieren nicht möglich: ' + err.message));
+}
+
+// Text in die Zwischenablage, mit Rückfall für ältere Umgebungen
+function copyText(text) {
+  const fallback = () => {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(fallback);
+  else fallback();
 }
 
 function exportSVG() {
@@ -1910,20 +2417,61 @@ function exportSVG() {
   download(fileBase() + '.svg', new Blob([markup], { type: 'image/svg+xml' }));
 }
 
+// Browser: Druckdialog mit dem Diagramm als Bild. Mac-App: native Druckfunktion (Druck oder PDF).
+function printDiagram() {
+  if (!state.nodes.length) { flashHint('Das Diagramm ist leer.'); return; }
+  if (NATIVE) { nativeCommand('print'); return; }
+  const { markup } = exportSVGMarkup(false);
+  const area = $('#print-area');
+  area.textContent = '';
+  const img = new Image();
+  img.onload = () => window.print();
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  area.appendChild(img);
+}
+
 function exportPNG() {
   const { markup, b } = exportSVGMarkup();
-  const scale = 2;
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = Math.ceil(b.w * scale);
-    c.height = Math.ceil(b.h * scale);
-    const ctx = c.getContext('2d');
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0, b.w, b.h);
-    c.toBlob(blob => download(fileBase() + '.png', blob), 'image/png');
-  };
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  svgToPng(markup, b).then(blob => download(fileBase() + '.png', blob));
+}
+
+/* ================= Relationenmodell & SQL ================= */
+
+let relationalTexts = null;
+
+function showRelational() {
+  if (!window.ERRelational) return;
+  closeMenu();
+  endEdit(false);
+  const box = $('.dialog', dialog);
+  box.classList.add('wide');
+  $('#dialog-title').textContent = 'Relationenmodell & SQL';
+  const body = $('#dialog-body');
+  if (!state.nodes.some(n => n.type === 'entity')) {
+    body.innerHTML = '<p class="empty-note">Noch keine Entities im Diagramm – lege zuerst Entities mit Attributen an.</p>';
+    relationalTexts = null;
+  } else {
+    const result = ERRelational.derive(state);
+    relationalTexts = { model: ERRelational.toText(result), sql: ERRelational.toSQL(result, state.title) };
+    body.innerHTML = `
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="model" aria-selected="true">Relationenmodell</button>
+        <button role="tab" data-tab="sql" aria-selected="false">SQL</button>
+      </div>
+      ${result.warnings.length ? `<ul class="issues">${result.warnings.map(w => `<li>${escapeHTML(w)}</li>`).join('')}</ul>` : ''}
+      <div data-pane="model">
+        <p class="legend"><u>unterstrichen</u> = Primärschlüssel · ↑ = Fremdschlüssel</p>
+        <div class="relations">${ERRelational.toHTML(result, escapeHTML)}</div>
+      </div>
+      <div data-pane="sql" hidden><pre class="code"></pre></div>
+      <div class="dialog-actions">
+        <button data-copy-text>Kopieren</button>
+        <button data-save-sql>Als .sql sichern</button>
+      </div>`;
+    $('pre.code', body).textContent = relationalTexts.sql;
+  }
+  dialog.hidden = false;
+  $('[data-close]', dialog).focus();
 }
 
 function newDiagram() {
@@ -1952,10 +2500,12 @@ const COMMANDS = {
   png: exportPNG,
   issues: nextIssue,
   theme: toggleTheme,
+  'copy-image': copyImage,
+  relational: showRelational,
   'zoom-in': () => zoomCenter(1.2),
   'zoom-out': () => zoomCenter(1 / 1.2),
   'zoom-reset': zoomReset,
-  fit,
+  fit: () => fit(),
 };
 
 document.addEventListener('click', ev => {
@@ -2010,6 +2560,11 @@ window.ERBridge = {
   flush() {
     return serialize();
   },
+  // Diagramm als PNG (Base64, dreifache Auflösung) für den nativen Druck
+  async printImage() {
+    const { markup, b } = exportSVGMarkup(false);
+    return blobToBase64(await svgToPng(markup, b, 3));
+  },
   // Befehle aus der Menüleiste
   menu(cmd) {
     const field = isTextField(document.activeElement) ? document.activeElement : null;
@@ -2027,6 +2582,11 @@ window.ERBridge = {
       exportPNG,
       nextIssue,
       changelog: () => showChangelog(),
+      search: openSearch,
+      fitSelection,
+      toggleMinimap: () => setPref('minimap', !prefs.minimap),
+      copyImage,
+      relational: showRelational,
       themeAuto: () => setPref('theme', 'auto'),
       themeLight: () => setPref('theme', 'light'),
       themeDark: () => setPref('theme', 'dark'),

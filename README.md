@@ -21,6 +21,13 @@ Was sich in welcher Version geändert hat: [Versionsverlauf](CHANGELOG.md). Nach
 - **Entity** (Rechteck), **Beziehung** (Raute), **Attribut** (Ellipse) und **Schlüsselattribut** (unterstrichen)
 - **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,n)`, `(1,n)`). Eingaben wie `0..1`, `1..*` oder `1,n` werden einheitlich als `(min,max)` geschrieben. Kardinalitäten stehen an der Entity und lassen sich entlang der Kante verschieben.
 - Varianten: schwache Entity, identifizierende Beziehung, partieller Schlüssel, mehrwertiges und abgeleitetes Attribut, totale Teilnahme (Doppellinie)
+- **Rekursive Beziehungen** mit **Rollennamen** – zwei Kanten zur selben Entity werden als Bögen gezeichnet
+- **Relationenmodell & SQL:** Tabellen mit Primär- und Fremdschlüsseln sowie ein `CREATE TABLE`-Skript automatisch ableiten (1:1, 1:N, N:M, mehrstellige, rekursive Beziehungen, schwache Entities, mehrwertige und zusammengesetzte Attribute; Chen- und Min-Max-Notation)
+- **Schnelleingabe:** Element auswählen, `Tab`, Attribute tippen, `Enter` legt das nächste an; `*` am Anfang = Schlüssel
+- **Als Bild kopieren** (`⇧⌘C`) – Diagramm oder Auswahl zum direkten Einfügen in andere Programme
+- **Suchen** (`⌘F`), **Übersichtskarte** und **Auf Auswahl zoomen** (`⇧F`)
+- **Notizen**, **Farben** und **Sperren** von Elementen
+- **Drucken / Als PDF sichern** (`⌘P`)
 - **Anfasser zum Verbinden:** Über einem Element erscheinen vier Anfasser. Ziehen auf ein anderes Element verbindet, Ziehen ins Leere legt direkt das passende Gegenstück an (Entity → Beziehung, Beziehung → Entity, Attribut → Teilattribut).
 - **Schnell-Hinzufügen** am Element: `+ Attribut`, `+ Schlüssel`, `+ Beziehung` bzw. `+ Entity` – neu, verbunden und an freier Stelle platziert
 - **Attribute anordnen:** verteilt alle Attribute eines Elements im Bogen auf der Seite ohne Beziehungen
@@ -44,9 +51,14 @@ Was sich in welcher Version geändert hat: [Versionsverlauf](CHANGELOG.md). Nach
 | Menü | Rechtsklick (Mac: auch `Ctrl` + Klick) |
 | Mehrere auswählen | Rahmen auf dem Hintergrund ziehen, `⇧` + Klick ergänzt, `⌘`/`Strg` + `A` wählt alles |
 | Kopieren / Einsetzen / Duplizieren | `⌘`/`Strg` + `C` / `V` / `D` |
+| Attribute schnell eingeben | Element auswählen, `Tab`, tippen, `Enter` für das nächste, leeres `Enter` oder `Esc` beendet |
+| Als Bild kopieren | `⇧⌘`/`⇧Strg` + `C` (bei Auswahl nur die Auswahl) |
+| Suchen | `⌘`/`Strg` + `F`, `Enter` springt zum nächsten Treffer |
+| Notiz | Werkzeug **Notiz** (`N`), `⇧Enter` für eine neue Zeile |
+| Drucken / PDF | `⌘`/`Strg` + `P` |
 | Verschieben | Element ziehen (bei Mehrfachauswahl alle gemeinsam), Pfeiltasten zur Feinjustierung |
 | Ansicht verschieben | Scrollen oder Leertaste + Ziehen |
-| Zoomen | `⌘`/`Strg` + Scrollen, `+` / `-`, `F` passt alles ein |
+| Zoomen | `⌘`/`Strg` + Scrollen, `+` / `-`, `F` passt alles ein, `⇧F` zoomt auf die Auswahl |
 | Löschen | `Entf` / `Backspace` |
 | Rückgängig | `⌘`/`Strg` + `Z`, Wiederholen mit `⇧` |
 
@@ -57,7 +69,7 @@ Im Browser speichert der Editor automatisch; mit **Speichern** / **Öffnen** wer
 Die Mac-App arbeitet mit echten Dokumenten:
 
 - Jedes Diagramm ist eine **`.erd`-Datei** in einem eigenen Fenster; Doppelklick im Finder öffnet sie.
-- Menü **Ablage**: Neu, Öffnen, Zuletzt benutzt, Sichern, Duplizieren, Umbenennen, Bewegen, Zurücksetzen, Export als SVG/PNG
+- Menü **Ablage**: Neu, Öffnen, Zuletzt benutzt, Sichern, Duplizieren, Umbenennen, Bewegen, Zurücksetzen, Alle Versionen durchsuchen, Relationenmodell & SQL, Export als SVG/PNG, Drucken
 - Änderungen werden wie bei Pages automatisch gesichert; ungesicherte Dokumente sind im Fenstertitel markiert.
 - `.json`-Dateien aus der Browser-Version lassen sich ebenfalls öffnen (auch über „Öffnen mit“).
 - Ein in früheren Versionen automatisch gespeichertes Diagramm wird beim ersten Start einmalig als neues Dokument übernommen.
@@ -85,6 +97,7 @@ Erzeugt `build/ER-Editor.app` und `build/ER-Editor-<Version>.dmg` (Version aus `
 - `index.html` – Oberfläche
 - `style.css` – Gestaltung
 - `app.js` – Editor-Logik (Vanilla JavaScript, SVG)
+- `relational.js` – Ableitung von Relationenmodell und SQL (auch in Node nutzbar)
 - `changelog.js` – Versionsverlauf (Quelle für das Neuigkeiten-Fenster und `CHANGELOG.md`)
 - `tools/changelog.py` – erzeugt `CHANGELOG.md`
 - `macos/` – Mac-App (Swift), Icon und Build-Skript

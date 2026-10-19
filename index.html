@@ -6,7 +6,7 @@
   <title>ER-Editor</title>
   <meta name="description" content="Kleiner ER-Diagramm-Editor im Browser (Chen-Notation)">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12,2 22,12 12,22 2,12' fill='%23fff2dc' stroke='%23c97a1c' stroke-width='2'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=1.2.1">
+  <link rel="stylesheet" href="style.css?v=1.3.0">
 </head>
 <body>
   <header class="toolbar">
@@ -30,6 +30,9 @@
       </button>
       <button data-tool="key" title="Schlüsselattribut (K)">
         <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="6"/><line x1="8" y1="14" x2="16" y2="14"/></svg><span>Schlüssel</span>
+      </button>
+      <button data-tool="note" title="Notiz (N)">
+        <svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M16 4v3h3M8 11h8M8 15h5"/></svg><span>Notiz</span>
       </button>
       <button data-tool="connect" title="Kante verbinden (C)">
         <svg viewBox="0 0 24 24"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/></svg><span>Kante</span>
@@ -63,6 +66,12 @@
       <button data-cmd="save" title="Speichern (⌘/Strg+S)">
         <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Speichern</span>
       </button>
+      <button data-cmd="relational" title="Relationenmodell und SQL ableiten">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><span>Tabellen</span>
+      </button>
+      <button data-cmd="copy-image" title="Als Bild kopieren (⇧⌘/Strg+C) – bei Auswahl nur die Auswahl">
+        <svg viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/><path d="M11 18l3-3 2 2 2-3 3 4"/></svg>
+      </button>
       <button data-cmd="svg" title="Als SVG exportieren"><span class="always">SVG</span></button>
       <button data-cmd="png" title="Als PNG exportieren"><span class="always">PNG</span></button>
       <button data-cmd="theme" id="theme-btn" title="Darstellung"></button>
@@ -82,6 +91,19 @@
           <g id="overlay"></g>
         </g>
       </svg>
+      <div id="empty" class="empty-state" hidden>
+        <p><b>Doppelklick</b>, um eine Entity anzulegen</p>
+        <p>oder oben ein Werkzeug wählen · Rechtsklick öffnet das Menü</p>
+      </div>
+      <div id="search" class="search" hidden role="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+        <input id="search-input" type="text" placeholder="Element suchen …" autocomplete="off" aria-label="Element suchen">
+        <span id="search-count" class="search-count"></span>
+        <button data-search-prev title="Vorheriger Treffer (⇧Enter)">↑</button>
+        <button data-search-next title="Nächster Treffer (Enter)">↓</button>
+        <button data-search-close title="Schließen (Esc)">✕</button>
+      </div>
+      <canvas id="minimap" class="minimap" title="Übersicht – klicken oder ziehen zum Verschieben" hidden></canvas>
       <div id="hint" class="hint"></div>
       <div class="zoom">
         <button data-cmd="zoom-out" title="Verkleinern">−</button>
@@ -95,8 +117,9 @@
     <aside id="panel" aria-label="Eigenschaften"></aside>
   </main>
 
-  <input id="inline" type="text" hidden autocomplete="off" aria-label="Beschriftung bearbeiten">
+  <textarea id="inline" rows="1" hidden autocomplete="off" spellcheck="false" aria-label="Beschriftung bearbeiten"></textarea>
   <input id="file" type="file" accept=".json,.erd,application/json" hidden>
+  <div id="print-area" aria-hidden="true"></div>
   <div id="ctxmenu" class="ctxmenu" role="menu" tabindex="-1" hidden></div>
   <div id="dialog" class="dialog-backdrop" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
@@ -108,7 +131,8 @@
     </div>
   </div>
 
-  <script src="changelog.js?v=1.2.1"></script>
-  <script src="app.js?v=1.2.1"></script>
+  <script src="changelog.js?v=1.3.0"></script>
+  <script src="relational.js?v=1.3.0"></script>
+  <script src="app.js?v=1.3.0"></script>
 </body>
 </html>
