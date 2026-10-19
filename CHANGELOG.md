@@ -2,6 +2,13 @@
 
 Wird aus `changelog.js` erzeugt (`tools/changelog.py`).
 
+## 1.2.1 – 19. Oktober 2026
+
+- Weniger Stromverbrauch: Beim Ziehen werden nur noch die bewegten Elemente und ihre Kanten neu gezeichnet, höchstens einmal pro Bild – bei großen Diagrammen rund 35-mal weniger Rechenarbeit
+- Zoomen, Verschieben der Ansicht und Rahmen-Auswahl bündeln ihre Aktualisierungen ebenfalls pro Bild
+- Schnellere Nachschlagetabellen für Elemente, Kanten und Textbreiten; Hinweise werden nur bei geändertem Aufbau neu geprüft
+- Mac-App zeichnet nach dem Start deckend statt durchsichtig über dem Fensterhintergrund
+
 ## 1.2.0 – 16. Oktober 2026
 
 - Versionsverlauf: Nach einem Update zeigt ein Fenster einmal, was neu ist; jederzeit über „Neuigkeiten“ im Hilfe-Panel bzw. im Menü ER-Editor erreichbar

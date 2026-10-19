@@ -87,6 +87,8 @@ final class ERDocument: NSDocument, WKScriptMessageHandler, WKUIDelegate, WKNavi
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webReady = true
         pushContent()
+        // Nach dem ersten Bild wieder deckend zeichnen – spart das Überblenden mit dem Fensterhintergrund
+        webView.setValue(true, forKey: "drawsBackground")
     }
 
     // MARK: Nachrichten aus der Web-App

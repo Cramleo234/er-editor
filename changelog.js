@@ -1,5 +1,15 @@
 window.ER_CHANGELOG = [
   {
+    "version": "1.2.1",
+    "date": "2026-10-19",
+    "changes": [
+      "Weniger Stromverbrauch: Beim Ziehen werden nur noch die bewegten Elemente und ihre Kanten neu gezeichnet, höchstens einmal pro Bild – bei großen Diagrammen rund 35-mal weniger Rechenarbeit",
+      "Zoomen, Verschieben der Ansicht und Rahmen-Auswahl bündeln ihre Aktualisierungen ebenfalls pro Bild",
+      "Schnellere Nachschlagetabellen für Elemente, Kanten und Textbreiten; Hinweise werden nur bei geändertem Aufbau neu geprüft",
+      "Mac-App zeichnet nach dem Start deckend statt durchsichtig über dem Fensterhintergrund"
+    ]
+  },
+  {
     "version": "1.2.0",
     "date": "2026-10-16",
     "changes": [

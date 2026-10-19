@@ -286,9 +286,17 @@ function checkWhatsNew(usedBefore) {
 /* ================= Geometrie ================= */
 
 const measureCtx = document.createElement('canvas').getContext('2d');
+const widthCache = new Map();
 function textWidth(text, font = NAME_FONT) {
-  measureCtx.font = font;
-  return measureCtx.measureText(text || ' ').width;
+  const key = font + '\u0000' + (text || ' ');
+  let w = widthCache.get(key);
+  if (w === undefined) {
+    measureCtx.font = font;
+    w = measureCtx.measureText(text || ' ').width;
+    if (widthCache.size > 5000) widthCache.clear();
+    widthCache.set(key, w);
+  }
+  return w;
 }
 
 function nodeSize(n) {
@@ -369,17 +377,51 @@ const diamond = (hw, hh) => `0,${-hh} ${hw},0 0,${hh} ${-hw},0`;
 
 /* ================= Abfragen ================= */
 
-const nodeById = id => state.nodes.find(n => n.id === id);
-const edgeById = id => state.edges.find(e => e.id === id);
+// Nachschlagetabellen; sie werden neu aufgebaut, sobald eine Liste ersetzt wird oder ihre Länge sich ändert
+// (Knoten und Kanten werden nur angehängt oder per filter() neu erzeugt, nie an Ort und Stelle ausgetauscht)
+const lookup = { nodes: null, nodeCount: -1, nodeMap: null, edges: null, edgeCount: -1, edgeMap: null, adjacency: null };
+function nodeIndex() {
+  if (lookup.nodes !== state.nodes || lookup.nodeCount !== state.nodes.length) {
+    lookup.nodes = state.nodes;
+    lookup.nodeCount = state.nodes.length;
+    lookup.nodeMap = new Map(state.nodes.map(n => [n.id, n]));
+    lookup.adjacency = null;
+  }
+  return lookup.nodeMap;
+}
+function edgeIndex() {
+  if (lookup.edges !== state.edges || lookup.edgeCount !== state.edges.length) {
+    lookup.edges = state.edges;
+    lookup.edgeCount = state.edges.length;
+    lookup.edgeMap = new Map(state.edges.map(e => [e.id, e]));
+    lookup.adjacency = null;
+  }
+  return lookup.edgeMap;
+}
+function adjacency() {
+  nodeIndex();
+  edgeIndex();
+  if (!lookup.adjacency) {
+    const adj = new Map();
+    const link = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
+    for (const e of state.edges) { link(e.from, e.to); link(e.to, e.from); }
+    lookup.adjacency = adj;
+  }
+  return lookup.adjacency;
+}
+const nodeById = id => nodeIndex().get(id);
+const edgeById = id => edgeIndex().get(id);
 const findSelected = () => selected && (selected.kind === 'node' ? nodeById(selected.id) : edgeById(selected.id));
-const isSelected = (kind, id) =>
-  (selected && selected.kind === kind && selected.id === id) || multi.some(s => s.kind === kind && s.id === id);
 const currentSelection = () => (multi.length ? multi.slice() : selected ? [selected] : []);
+let selectionCache = { selected: undefined, multi: null, keys: null };
+const isSelected = (kind, id) => {
+  if (selectionCache.selected !== selected || selectionCache.multi !== multi) {
+    selectionCache = { selected, multi, keys: new Set(currentSelection().map(s => s.kind + s.id)) };
+  }
+  return selectionCache.keys.has(kind + id);
+};
 const selectedNodes = () => currentSelection().filter(s => s.kind === 'node').map(s => nodeById(s.id)).filter(Boolean);
-const neighbors = n => state.edges
-  .filter(e => e.from === n.id || e.to === n.id)
-  .map(e => nodeById(e.from === n.id ? e.to : e.from))
-  .filter(Boolean);
+const neighbors = n => (adjacency().get(n.id) || []).map(nodeById).filter(Boolean);
 const isTextField = t => Boolean(t && t.matches && t.matches('input, textarea, select'));
 
 /* ================= Hinweise ================= */
@@ -434,12 +476,68 @@ function el(tag, attrs, parent) {
   return e;
 }
 
+// Alle Änderungen eines Bildes werden gesammelt und einmal pro Bildschirm-Aktualisierung gezeichnet
+const nodeEls = new Map();
+const edgeEls = new Map();
+const pending = { nodes: new Set(), edges: new Set(), selection: false, view: false };
+let frameQueued = false;
+
+function requestFrame() {
+  if (frameQueued) return;
+  frameQueued = true;
+  requestAnimationFrame(flushFrame);
+}
+
+function flushFrame() {
+  frameQueued = false;
+  if (pending.nodes.size || pending.edges.size) redrawParts();
+  if (pending.selection) refreshSelection();
+  if (pending.view) {
+    pending.view = false;
+    applyView();
+    renderBadges();
+    renderOverlay();
+    if (editing) positionInline();
+  }
+}
+
+// Nur bewegte Knoten und ihre Kanten neu zeichnen
+function redrawParts() {
+  for (const id of pending.nodes) {
+    const n = nodeById(id);
+    if (n) nodeEls.get(id)?.setAttribute('transform', `translate(${n.x} ${n.y})`);
+  }
+  for (const id of pending.edges) {
+    const e = edgeById(id);
+    if (e) drawEdge(e);
+  }
+  pending.nodes.clear();
+  pending.edges.clear();
+  renderBadges();
+}
+
+// Auswahl ohne Neuaufbau: nur Markierungen umschalten
+function refreshSelection() {
+  pending.selection = false;
+  for (const [id, g] of nodeEls) g.classList.toggle('selected', isSelected('node', id));
+  for (const [id, g] of edgeEls) g.classList.toggle('selected', isSelected('edge', id));
+  renderOverlay();
+  renderPanel();
+  updateButtons();
+}
+
 function render() {
+  pending.nodes.clear();
+  pending.edges.clear();
+  pending.selection = false;
   gEdges.textContent = '';
   gNodes.textContent = '';
+  nodeEls.clear();
+  edgeEls.clear();
   for (const e of state.edges) drawEdge(e);
   for (const n of state.nodes) drawNode(n);
-  issues = computeIssues();
+  // Beim Ziehen ändert sich nur die Lage, nicht der Aufbau – die Hinweise bleiben gültig
+  if (!drag) issues = computeIssues();
   renderBadges();
   renderOverlay();
   const count = issues.size;
@@ -453,7 +551,10 @@ function drawEdge(e) {
   const geo = edgeGeometry(e);
   if (!geo) return;
   const { p, q } = geo;
-  const g = el('g', { class: 'edge' + (isSelected('edge', e.id) ? ' selected' : ''), 'data-edge': e.id }, gEdges);
+  const g = el('g', { class: 'edge' + (isSelected('edge', e.id) ? ' selected' : ''), 'data-edge': e.id });
+  const old = edgeEls.get(e.id);
+  if (old && old.parentNode) old.replaceWith(g); else gEdges.appendChild(g);
+  edgeEls.set(e.id, g);
   el('line', { class: 'hit', x1: p.x, y1: p.y, x2: q.x, y2: q.y }, g);
   if (e.total) {
     const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
@@ -482,6 +583,7 @@ function drawNode(n) {
   if (connectFrom === n.id) cls.push('source');
   if (dropTarget === n.id) cls.push('target');
   const g = el('g', { class: cls.join(' '), 'data-node': n.id, transform: `translate(${n.x} ${n.y})` }, gNodes);
+  nodeEls.set(n.id, g);
 
   if (n.type === 'entity') {
     el('rect', { class: 'shape', x: -hw, y: -hh, width: w, height: h, rx: 3 }, g);
@@ -591,10 +693,8 @@ function applyView() {
 
 let saveViewTimer;
 function viewChanged() {
-  applyView();
-  renderBadges();
-  renderOverlay();
-  if (editing) positionInline();
+  pending.view = true;
+  requestFrame();
   if (NATIVE) return;  // die Ansicht gehört nicht zum Dokument
   clearTimeout(saveViewTimer);
   saveViewTimer = setTimeout(persist, 300);
@@ -1139,7 +1239,9 @@ svg.addEventListener('pointerdown', ev => {
     if (!inGroup) select({ kind: 'node', id });
     const ids = inGroup ? multi.filter(s => s.kind === 'node').map(s => s.id) : [id];
     const origin = ids.map(i => { const n = nodeById(i); return { n, x: n.x, y: n.y }; });
-    drag = { type: 'node', primary: id, start: p, origin, before: snapshot(), moved: false };
+    const moving = new Set(ids);
+    const edgeIds = state.edges.filter(e => moving.has(e.from) || moving.has(e.to)).map(e => e.id);
+    drag = { type: 'node', primary: id, start: p, origin, edgeIds, before: snapshot(), moved: false };
     svg.setPointerCapture(ev.pointerId);
     return;
   }
@@ -1188,8 +1290,14 @@ function updateMarquee(p) {
     if (geo && geo.mx >= x1 && geo.mx <= x2 && geo.my >= y1 && geo.my <= y2) hits.push({ kind: 'edge', id: e.id });
   }
   const items = drag.base.slice();
-  for (const h of hits) if (!items.some(s => s.kind === h.kind && s.id === h.id)) items.push(h);
-  selectMany(items);
+  const known = new Set(items.map(s => s.kind + s.id));
+  for (const h of hits) if (!known.has(h.kind + h.id)) items.push(h);
+  const key = items.map(s => s.kind + s.id).join(',');
+  if (key === drag.lastKey) return;
+  drag.lastKey = key;
+  if (items.length > 1) { selected = null; multi = items; } else { selected = items[0] || null; multi = []; }
+  pending.selection = true;
+  requestFrame();
 }
 
 // Knoten verschieben: an anderen Mittelpunkten ausrichten (mit Hilfslinie), sonst am Raster einrasten.
@@ -1245,7 +1353,11 @@ svg.addEventListener('pointermove', ev => {
     const t = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-node]');
     const id = t ? +t.dataset.node : null;
     const target = id !== connectFrom ? id : null;
-    if (target !== dropTarget) { dropTarget = target; render(); }
+    if (target !== dropTarget) {
+      nodeEls.get(dropTarget)?.classList.remove('target');
+      dropTarget = target;
+      nodeEls.get(dropTarget)?.classList.add('target');
+    }
   }
   if (!drag) { updateHover(ev, p); return; }
 
@@ -1263,12 +1375,15 @@ svg.addEventListener('pointermove', ev => {
     const t = ((p.x - geo.p.x) * vx + (p.y - geo.p.y) * vy) / (vx * vx + vy * vy || 1);
     e.labelT = Math.round(Math.min(0.92, Math.max(0.08, t)) * 1000) / 1000;
     drag.moved = true;
-    render();
+    pending.edges.add(e.id);
+    requestFrame();
   } else if (drag.type === 'node') {
     moveNodes(p, ev.altKey);
     drag.moved = true;
     lastDown = null;
-    render();
+    for (const o of drag.origin) pending.nodes.add(o.n.id);
+    for (const id of drag.edgeIds) pending.edges.add(id);
+    requestFrame();
   }
 });
 
