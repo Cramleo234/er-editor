@@ -2,6 +2,11 @@
 
 Wird aus `changelog.js` erzeugt (`tools/changelog.py`).
 
+## 1.3.1 – 22. Oktober 2026
+
+- Min-Max-Notation schreibt „beliebig viele“ jetzt als * statt n: (0,*), (1,*); Eingaben wie 1,n oder (0,N) werden automatisch umgeschrieben
+- Ältere Diagramme mit (0,n) oder (1,n) werden beim Öffnen auf * umgestellt
+
 ## 1.3.0 – 19. Oktober 2026
 
 - Rekursive Beziehungen (z. B. „Mitarbeiter leitet Mitarbeiter“): zwei Kanten zur selben Entity als Bögen, mit Rollennamen

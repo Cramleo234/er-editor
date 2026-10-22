@@ -23,15 +23,17 @@ const COLORS = {
   blue: ['Blau', '59,111,224'], green: ['Grün', '47,158,68'], orange: ['Orange', '232,89,12'],
   red: ['Rot', '224,49,49'], purple: ['Lila', '156,54,181'], gray: ['Grau', '134,142,150'],
 };
-const LABEL_PRESETS = ['1', 'N', 'M', '(0,1)', '(1,1)', '(0,n)', '(1,n)'];
+const LABEL_PRESETS = ['1', 'N', 'M', '(0,1)', '(1,1)', '(0,*)', '(1,*)'];
 
-// Min-Max-Angaben einheitlich als (min,max): "0..1", "1..*", "1,n", "( 0 ; N )" -> "(0,1)", "(1,n)", "(0,n)"
+// Min-Max-Angaben einheitlich als (min,max) mit * für „beliebig viele“:
+// "0..1", "1..*", "1,n", "( 0 ; N )" -> "(0,1)", "(1,*)", "(1,*)", "(0,*)"
 const MINMAX = /^\s*\(?\s*(\d+|[a-z*])\s*(?:,|;|\.\.)\s*(\d+|[a-z*])\s*\)?\s*$/i;
 function normalizeLabel(label) {
   const m = MINMAX.exec(label || '');
   if (!m) return (label || '').trim();
-  const part = v => (v === '*' ? 'n' : v.toLowerCase());
-  return `(${part(m[1])},${part(m[2])})`;
+  // Obergrenze ohne Zahl (n, m, N, *) wird zu *
+  const max = /^\d+$/.test(m[2]) ? m[2] : '*';
+  return `(${m[1].toLowerCase()},${max})`;
 }
 
 const FLAGS = {
@@ -1400,7 +1402,7 @@ document.addEventListener('paste', ev => {
 
 /* ================= Inline-Editor ================= */
 
-const EDIT_PLACEHOLDER = { name: 'Name', label: 'z. B. 1, N oder (0,n)', role: 'Rolle, z. B. Vorgesetzter' };
+const EDIT_PLACEHOLDER = { name: 'Name', label: 'z. B. 1, N oder (0,*)', role: 'Rolle, z. B. Vorgesetzter' };
 
 // field: 'name' (Knoten), 'label' (Kardinalität) oder 'role' (Rollenname).
 // opts.chain: Schnelleingabe – Enter legt das nächste Attribut am selben Element an.
@@ -2168,7 +2170,7 @@ function renderPanel() {
   } else {
     panel.innerHTML = `
       <h2>Kante</h2>
-      <label class="field"><span>Beschriftung</span><input type="text" data-text="label" autocomplete="off" placeholder="z. B. 1, N oder (0,n)"></label>
+      <label class="field"><span>Beschriftung</span><input type="text" data-text="label" autocomplete="off" placeholder="z. B. 1, N oder (0,*)"></label>
       <div class="presets">
         ${LABEL_PRESETS.map(l => `<button data-preset="${l}" aria-pressed="${obj.label === l}">${l}</button>`).join('')}
         <button data-preset="" title="Beschriftung entfernen">✕</button>
@@ -2611,8 +2613,8 @@ function sampleDiagram() {
     { id: 10, type: 'attribute', x: 924, y: 396, name: 'Teilnehmer', derived: true },
   ];
   const edges = [
-    { id: 11, from: 1, to: 2, label: '(0,n)' },
-    { id: 12, from: 2, to: 3, label: '(1,n)', total: true },
+    { id: 11, from: 1, to: 2, label: '(0,*)' },
+    { id: 12, from: 2, to: 3, label: '(1,*)', total: true },
     { id: 13, from: 1, to: 4, label: '' },
     { id: 14, from: 1, to: 5, label: '' },
     { id: 15, from: 1, to: 6, label: '' },

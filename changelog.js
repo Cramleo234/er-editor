@@ -1,5 +1,13 @@
 window.ER_CHANGELOG = [
   {
+    "version": "1.3.1",
+    "date": "2026-10-22",
+    "changes": [
+      "Min-Max-Notation schreibt „beliebig viele“ jetzt als * statt n: (0,*), (1,*); Eingaben wie 1,n oder (0,N) werden automatisch umgeschrieben",
+      "Ältere Diagramme mit (0,n) oder (1,n) werden beim Öffnen auf * umgestellt"
+    ]
+  },
+  {
     "version": "1.3.0",
     "date": "2026-10-19",
     "changes": [

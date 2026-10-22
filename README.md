@@ -19,7 +19,7 @@ Was sich in welcher Version geändert hat: [Versionsverlauf](CHANGELOG.md). Nach
 ## Funktionen
 
 - **Entity** (Rechteck), **Beziehung** (Raute), **Attribut** (Ellipse) und **Schlüsselattribut** (unterstrichen)
-- **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,n)`, `(1,n)`). Eingaben wie `0..1`, `1..*` oder `1,n` werden einheitlich als `(min,max)` geschrieben. Kardinalitäten stehen an der Entity und lassen sich entlang der Kante verschieben.
+- **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,*)`, `(1,*)`). Eingaben wie `0..1`, `1..*`, `1,n` oder `(0,N)` werden einheitlich als `(min,max)` mit `*` für „beliebig viele“ geschrieben. Kardinalitäten stehen an der Entity und lassen sich entlang der Kante verschieben.
 - Varianten: schwache Entity, identifizierende Beziehung, partieller Schlüssel, mehrwertiges und abgeleitetes Attribut, totale Teilnahme (Doppellinie)
 - **Rekursive Beziehungen** mit **Rollennamen** – zwei Kanten zur selben Entity werden als Bögen gezeichnet
 - **Relationenmodell & SQL:** Tabellen mit Primär- und Fremdschlüsseln sowie ein `CREATE TABLE`-Skript automatisch ableiten (1:1, 1:N, N:M, mehrstellige, rekursive Beziehungen, schwache Entities, mehrwertige und zusammengesetzte Attribute; Chen- und Min-Max-Notation)

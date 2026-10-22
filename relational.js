@@ -5,7 +5,7 @@
 
   const MINMAX = /^\(\s*(\d+|[a-z*])\s*,\s*(\d+|[a-z*])\s*\)$/i;
 
-  // Kardinalität einer Kante lesen: Chen („1“, „N“, „M“) oder Min-Max („(0,1)“, „(1,n)“)
+  // Kardinalität einer Kante lesen: Chen („1“, „N“, „M“) oder Min-Max („(0,1)“, „(1,*)“)
   function cardinality(label) {
     const text = (label || '').trim();
     if (!text) return null;
