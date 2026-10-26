@@ -132,11 +132,46 @@
       }
     }
 
-    // Ohne Schlüssel: Ersatzschlüssel
+    // Generalisierung/Spezialisierung (is-a): Unterklasse -> Oberklasse
+    const superOf = new Map();
+    for (const isa of diagram.nodes.filter(n => n.type === 'isa')) {
+      const sup = nodes.get(isa.superId);
+      if (!sup || sup.type !== 'entity' || !links(isa).some(l => l.other.id === sup.id)) {
+        warnings.push(`Spezialisierung „${cleanName(isa.name, 'is-a')}“ hat keine Oberklasse und wird übersprungen.`);
+        continue;
+      }
+      for (const l of links(isa)) {
+        if (l.other.type === 'entity' && l.other.id !== sup.id) superOf.set(l.other.id, sup.id);
+      }
+    }
+    const addSurrogate = table => {
+      warnings.push(`„${table.name}“ hat kein Schlüsselattribut – Ersatzschlüssel „${table.name}_ID“ ergänzt.`);
+      table.columns.unshift({ name: `${table.name}_ID`, type: 'INTEGER', pk: true });
+    };
+
+    // Ohne Schlüssel: Ersatzschlüssel (Unterklassen erben ihn stattdessen, siehe unten)
     for (const table of tables) {
-      if (!pkColumns(table).length) {
-        warnings.push(`„${table.name}“ hat kein Schlüsselattribut – Ersatzschlüssel „${table.name}_ID“ ergänzt.`);
-        table.columns.unshift({ name: `${table.name}_ID`, type: 'INTEGER', pk: true });
+      if (!pkColumns(table).length && !superOf.has(table.node.id)) addSurrogate(table);
+    }
+
+    // Unterklassen übernehmen den Primärschlüssel der Oberklasse als Primär- und Fremdschlüssel;
+    // eigene Schlüsselattribute bleiben als normale Spalten erhalten. Ketten werden von oben nach unten aufgelöst.
+    const done = new Set();
+    for (let round = 0; round <= superOf.size; round++) {
+      for (const [subId, supId] of superOf) {
+        if (done.has(subId) || (superOf.has(supId) && !done.has(supId))) continue;
+        const sub = tableOf.get(subId);
+        for (const c of sub.columns) c.pk = false;
+        addForeignKey(sub, tableOf.get(supId), '', true, `isa${subId}`);
+        const fkCols = sub.columns.filter(c => c.fk && c.fk.group === `isa${subId}`);
+        sub.columns = [...fkCols, ...sub.columns.filter(c => !fkCols.includes(c))];
+        done.add(subId);
+      }
+    }
+    for (const [subId] of superOf) {
+      if (!done.has(subId)) {
+        warnings.push(`Zyklische Spezialisierung bei „${tableOf.get(subId).name}“ – Ersatzschlüssel ergänzt.`);
+        if (!pkColumns(tableOf.get(subId)).length) addSurrogate(tableOf.get(subId));
       }
     }
 

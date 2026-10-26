@@ -17,7 +17,9 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const NATIVE = Boolean(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.er);
 
 const TYPES = { entity: 'Entity', relationship: 'Beziehung', attribute: 'Attribut' };
-const NODE_TYPES = { ...TYPES, note: 'Notiz' };  // Notizen gehören nicht zum ER-Modell
+// Spezialisierung (is-a) und Notizen sind eigene Elementarten neben den drei Grundtypen
+const NODE_TYPES = { ...TYPES, isa: 'Spezialisierung', note: 'Notiz' };
+const ARROWS = ['end', 'start', 'both'];
 const NOTE_FONT = `400 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
 const COLORS = {
   blue: ['Blau', '59,111,224'], green: ['Grün', '47,158,68'], orange: ['Orange', '232,89,12'],
@@ -50,16 +52,17 @@ const FLAGS = {
 
 // Schnell-Hinzufügen am Element: [Typ, Beschriftung]
 const QUICK = {
-  entity: [['attribute', '+ Attribut'], ['key', '+ Schlüssel'], ['relationship', '+ Beziehung']],
+  entity: [['attribute', '+ Attribut'], ['key', '+ Schlüssel'], ['relationship', '+ Beziehung'], ['isa', '+ Spezialisierung']],
   relationship: [['entity', '+ Entity'], ['attribute', '+ Attribut']],
   attribute: [['attribute', '+ Teilattribut']],
+  isa: [['entity', '+ Unterklasse']],
 };
 const QUICK_MENU = {
   attribute: 'Attribut hinzufügen', key: 'Schlüssel hinzufügen',
-  relationship: 'Beziehung hinzufügen', entity: 'Entity hinzufügen',
+  relationship: 'Beziehung hinzufügen', entity: 'Entity hinzufügen', isa: 'Spezialisierung hinzufügen',
 };
 // Zieht man einen Anfasser ins Leere, entsteht der passende Partner
-const PARTNER = { entity: 'relationship', relationship: 'entity', attribute: 'attribute' };
+const PARTNER = { entity: 'relationship', relationship: 'entity', attribute: 'attribute', isa: 'entity' };
 
 const HINTS = {
   select: 'Doppelklick auf die Fläche: Entity · Anfasser ziehen: verbinden · Rahmen ziehen: Mehrfachauswahl · Rechtsklick: Menü',
@@ -70,6 +73,7 @@ const HINTS = {
   connect: 'Quelle anklicken, dann Ziel anklicken – oder von Element zu Element ziehen',
   connectTarget: 'Ziel anklicken oder loslassen – im Leeren entsteht ein neues Element · Esc bricht ab',
   note: 'Klicke auf die Fläche, um Notizen zu platzieren · ⇧Enter für eine neue Zeile · Esc oder V zurück',
+  isa: 'Klicke auf die Fläche, um eine Spezialisierung (is-a) zu platzieren · die erste verbundene Entity wird Oberklasse · Esc oder V zurück',
 };
 
 // Diagramm-Styles: in der Zeichenfläche UND in exportierten SVG/PNG. Die Variablen setzt style.css
@@ -90,6 +94,11 @@ text{font:${NAME_FONT};fill:var(--d-text,#1f2430);text-anchor:middle;dominant-ba
 .edge .hit{stroke:transparent;stroke-width:14}
 .label-bg{fill:var(--d-label-bg,#ffffff);stroke:var(--d-label-border,#c9ced8);stroke-width:1}
 .label{font:${LABEL_FONT}}
+.isa .shape{fill:var(--d-isa-fill,#e3f6f3);stroke:var(--d-isa-stroke,#1c8a7e)}
+.isa-text{font:600 11px ${FONT_STACK}}
+.isa-caption{font:italic 500 11px ${FONT_STACK};fill:var(--d-muted,#667085)}
+.edge .arrow{fill:var(--d-edge,#4a5263)}
+.edge.selected .arrow{fill:var(--d-accent,#6741d9)}
 .note .shape{fill:var(--d-note-fill,#fff6bf);stroke:var(--d-note-stroke,#d9a400)}
 .note .fold{fill:none;stroke:var(--d-note-stroke,#d9a400);stroke-width:1.2}
 .note-text{font:${NOTE_FONT};text-anchor:start}
@@ -337,7 +346,31 @@ function textWidth(text, font = NAME_FONT) {
   return w;
 }
 
+const ISA_R = 34;  // Umkreis des is-a-Dreiecks
+
+// Oberklasse einer Spezialisierung – nur solange sie noch verbunden ist
+function superOf(n) {
+  if (!n || n.type !== 'isa' || n.superId == null) return null;
+  const s = nodeById(n.superId);
+  return s && neighbors(n).includes(s) ? s : null;
+}
+
+// Die Spitze zeigt zur Oberklasse (ohne Oberklasse nach oben)
+function isaAngle(n) {
+  const s = superOf(n);
+  return s && (s.x !== n.x || s.y !== n.y) ? Math.atan2(s.y - n.y, s.x - n.x) : -Math.PI / 2;
+}
+
+function isaPoints(n) {
+  const a = isaAngle(n);
+  return [0, 1, 2].map(i => ({ x: Math.cos(a + (i * 2 * Math.PI) / 3) * ISA_R, y: Math.sin(a + (i * 2 * Math.PI) / 3) * ISA_R }));
+}
+
+// Unterklassen: alle verbundenen Entities außer der Oberklasse
+const subclassesOf = n => neighbors(n).filter(m => m.type === 'entity' && m !== superOf(n));
+
 function nodeSize(n) {
+  if (n.type === 'isa') return { w: ISA_R * 2, h: ISA_R * 2 };
   if (n.type === 'note') {
     const lines = (n.name || ' ').split('\n');
     const tw = Math.max(...lines.map(l => textWidth(l, NOTE_FONT)));
@@ -357,6 +390,20 @@ function borderPoint(n, tx, ty) {
   const hw = w / 2, hh = h / 2;
   const dx = tx - n.x, dy = ty - n.y;
   if (!dx && !dy) return { x: n.x, y: n.y };
+  if (n.type === 'isa') {
+    // Strahl vom Mittelpunkt mit den drei Dreiecksseiten schneiden
+    const pts = isaPoints(n);
+    let best = 1;
+    for (let i = 0; i < 3; i++) {
+      const a = pts[i], b = pts[(i + 1) % 3];
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = (a.x * ey - a.y * ex) / den, u = (a.x * dy - a.y * dx) / den;
+      if (t > 0 && u >= 0 && u <= 1) best = Math.min(best, t);
+    }
+    return { x: n.x + dx * best, y: n.y + dy * best };
+  }
   let t;
   if (n.type === 'entity' || n.type === 'note') t = Math.min(hw / Math.abs(dx || 1e-9), hh / Math.abs(dy || 1e-9));
   else if (n.type === 'relationship') t = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
@@ -556,8 +603,8 @@ function computeIssues() {
       if (n.weak) {
         if (!attrs.some(a => a.partial || a.key)) add(n.id, 'Schwache Entity ohne partiellen Schlüssel');
         if (!nb.some(m => m.type === 'relationship' && m.weak)) add(n.id, 'Schwache Entity ohne identifizierende Beziehung');
-      } else if (!attrs.some(a => a.key)) {
-        add(n.id, 'Kein Schlüsselattribut');
+      } else if (!attrs.some(a => a.key) && !nb.some(m => m.type === 'isa' && superOf(m) !== n)) {
+        add(n.id, 'Kein Schlüsselattribut');  // Unterklassen erben den Schlüssel der Oberklasse
       }
       if (names.get(n.name.trim().toLowerCase()) > 1) add(n.id, 'Name mehrfach vergeben');
       if (nb.some(m => m.type === 'entity')) add(n.id, 'Direkt mit einer Entity verbunden – Beziehung fehlt');
@@ -570,6 +617,9 @@ function computeIssues() {
         add(n.id, 'Rekursive Beziehung: Rollennamen an den Kanten fehlen');
       }
       if (nb.some(m => m.type === 'relationship')) add(n.id, 'Direkt mit einer Beziehung verbunden');
+    } else if (n.type === 'isa') {
+      if (!superOf(n)) add(n.id, 'Oberklasse fehlt – im Panel festlegen');
+      if (!subclassesOf(n).length) add(n.id, 'Keine Unterklasse verbunden');
     } else if (n.type === 'attribute' && !nb.length) {
       add(n.id, 'Attribut ist nicht verbunden');
     }
@@ -598,7 +648,7 @@ function el(tag, attrs, parent) {
 // Alle Änderungen eines Bildes werden gesammelt und einmal pro Bildschirm-Aktualisierung gezeichnet
 const nodeEls = new Map();
 const edgeEls = new Map();
-const pending = { nodes: new Set(), edges: new Set(), selection: false, view: false, minimap: false };
+const pending = { nodes: new Set(), edges: new Set(), redraw: new Set(), selection: false, view: false, minimap: false };
 let frameQueued = false;
 
 function requestFrame() {
@@ -609,7 +659,7 @@ function requestFrame() {
 
 function flushFrame() {
   frameQueued = false;
-  if (pending.nodes.size || pending.edges.size) redrawParts();
+  if (pending.nodes.size || pending.edges.size || pending.redraw.size) redrawParts();
   if (pending.selection) refreshSelection();
   if (pending.view) {
     pending.view = false;
@@ -628,12 +678,17 @@ function redrawParts() {
     const n = nodeById(id);
     if (n) nodeEls.get(id)?.setAttribute('transform', `translate(${n.x} ${n.y})`);
   }
+  for (const id of pending.redraw) {
+    const n = nodeById(id);
+    if (n) drawNode(n);
+  }
   for (const id of pending.edges) {
     const e = edgeById(id);
     if (e) drawEdge(e);
   }
   pending.nodes.clear();
   pending.edges.clear();
+  pending.redraw.clear();
   renderBadges();
   pending.minimap = true;
 }
@@ -649,6 +704,7 @@ function refreshSelection() {
 }
 
 function render() {
+  pending.redraw.clear();
   pending.nodes.clear();
   pending.edges.clear();
   pending.selection = false;
@@ -675,7 +731,7 @@ function render() {
 
 /* ================= Übersichtskarte ================= */
 
-const MINIMAP_COLORS = { entity: '--d-entity-stroke', relationship: '--d-rel-stroke', attribute: '--d-attr-stroke', note: '--d-note-stroke' };
+const MINIMAP_COLORS = { entity: '--d-entity-stroke', relationship: '--d-rel-stroke', attribute: '--d-attr-stroke', isa: '--d-isa-stroke', note: '--d-note-stroke' };
 let minimapFrame = null;   // Abbildung Welt -> Karte der letzten Zeichnung
 let minimapColors = null;  // aus CSS gelesen; beim Designwechsel verworfen
 let minimapLast = 0;
@@ -830,7 +886,18 @@ function drawEdge(e) {
     ? el('path', { class: cls, d: `M${p.x + ox * s} ${p.y + oy * s} Q${c.x + ox * s} ${c.y + oy * s} ${q.x + ox * s} ${q.y + oy * s}` }, g)
     : el('line', { class: cls, x1: p.x + ox * s, y1: p.y + oy * s, x2: q.x + ox * s, y2: q.y + oy * s }, g));
   segment('hit', 0);
-  if (e.total) { segment('stroke', 1); segment('stroke', -1); } else segment('stroke', 0);
+  const isa = geo.a.type === 'isa' ? geo.a : geo.b.type === 'isa' ? geo.b : null;
+  const totalIsa = isa && isa.total === true && superOf(isa) === (isa === geo.a ? geo.b : geo.a);
+  if (e.total || totalIsa) { segment('stroke', 1); segment('stroke', -1); } else segment('stroke', 0);
+  // Pfeilspitzen an Start und/oder Ende, ausgerichtet an der Kante (bei Bögen an der Tangente)
+  const head = (tip, from) => {
+    const dx = tip.x - from.x, dy = tip.y - from.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, L = 11, W = 4.8;
+    const bx = tip.x - ux * L, by = tip.y - uy * L;
+    el('polygon', { class: 'arrow', points: `${tip.x},${tip.y} ${bx - uy * W},${by + ux * W} ${bx + uy * W},${by - ux * W}` }, g);
+  };
+  if (e.arrow === 'end' || e.arrow === 'both') head(q, c || p);
+  if (e.arrow === 'start' || e.arrow === 'both') head(p, c || q);
   if (e.role) {
     const pos = rolePosition(geo);
     el('text', { class: 'role', x: pos.x, y: pos.y, 'data-role': e.id }, g).textContent = e.role;
@@ -854,7 +921,9 @@ function drawNode(n) {
   if (dropTarget === n.id) cls.push('target');
   if (n.color && COLORS[n.color]) cls.push('c-' + n.color);
   if (n.locked) cls.push('locked');
-  const g = el('g', { class: cls.join(' '), 'data-node': n.id, transform: `translate(${n.x} ${n.y})` }, gNodes);
+  const g = el('g', { class: cls.join(' '), 'data-node': n.id, transform: `translate(${n.x} ${n.y})` });
+  const old = nodeEls.get(n.id);
+  if (old && old.parentNode) old.replaceWith(g); else gNodes.appendChild(g);
   nodeEls.set(n.id, g);
 
   if (n.type === 'entity') {
@@ -863,6 +932,18 @@ function drawNode(n) {
   } else if (n.type === 'relationship') {
     el('polygon', { class: 'shape', points: diamond(hw, hh) }, g);
     if (n.weak) el('polygon', { class: 'shape', points: diamond(hw - 12, hh - 7) }, g);
+  } else if (n.type === 'isa') {
+    el('polygon', { class: 'shape', points: isaPoints(n).map(pt => `${pt.x},${pt.y}`).join(' ') }, g);
+    el('text', { class: 'isa-text', x: 0, y: 0 }, g).textContent = n.name || 'is-a';
+    const caption = [
+      n.disjoint === true ? 'disjunkt' : n.disjoint === false ? 'überlappend' : '',
+      n.total === true ? 'total' : n.total === false ? 'partiell' : '',
+    ].filter(Boolean).join(', ');
+    if (caption) {
+      const a = isaAngle(n) + Math.PI;  // gegenüber der Spitze
+      el('text', { class: 'isa-caption', x: Math.cos(a) * (ISA_R + 14), y: Math.sin(a) * (ISA_R + 14) }, g).textContent = caption;
+    }
+    return;
   } else if (n.type === 'note') {
     const f = 12;  // umgeknickte Ecke
     el('path', { class: 'shape', d: `M${-hw} ${-hh}H${hw - f}L${hw} ${-hh + f}V${hh}H${-hw}Z` }, g);
@@ -1078,7 +1159,7 @@ function makeNode(type, p) {
     type: type === 'key' ? 'attribute' : type,
     x: snap(p.x),
     y: snap(p.y),
-    name: type === 'key' ? 'ID' : NODE_TYPES[type],
+    name: type === 'key' ? 'ID' : type === 'isa' ? 'is-a' : NODE_TYPES[type],
   };
   if (type === 'key') n.key = true;
   return n;
@@ -1120,11 +1201,34 @@ function freeSpot(a, type) {
   return { x: a.x + as.w / 2 + 140, y: a.y };
 }
 
+// Spezialisierung unter einer Entity anlegen – gleich mit einer ersten Unterklasse
+function addSpecialization(a) {
+  const before = snapshot();
+  const as = nodeSize(a);
+  let pos = { x: a.x, y: a.y + as.h / 2 + 80 };
+  if (collides(pos.x, pos.y, { w: ISA_R * 2, h: ISA_R * 2 })) pos = freeSpot(a, 'isa');
+  const isa = makeNode('isa', pos);
+  isa.superId = a.id;
+  state.nodes.push(isa);
+  state.edges.push({ id: nextId++, from: a.id, to: isa.id, label: '' });
+  let subPos = { x: isa.x, y: isa.y + 110 };
+  if (collides(subPos.x, subPos.y, nodeSize({ type: 'entity', name: 'Unterklasse' }))) subPos = freeSpot(isa, 'entity');
+  const sub = makeNode('entity', subPos);
+  sub.name = 'Unterklasse';
+  state.nodes.push(sub);
+  state.edges.push({ id: nextId++, from: isa.id, to: sub.id, label: '' });
+  commit(before);
+  select({ kind: 'node', id: sub.id });
+  startEdit('node', sub.id);
+}
+
 function quickAdd(anchorId, type, opts = {}) {
   const a = nodeById(anchorId);
   if (!a) return;
+  if (type === 'isa') { addSpecialization(a); return; }
   const before = snapshot();
   const n = makeNode(type, freeSpot(a, type));
+  if (a.type === 'isa' && type === 'entity') n.name = 'Unterklasse';
   state.nodes.push(n);
   state.edges.push({ id: nextId++, from: a.id, to: n.id, label: '' });
   // In der Schnelleingabe wird Anlegen und Benennen gemeinsam übernommen (Esc entfernt das neue Attribut wieder)
@@ -1167,8 +1271,40 @@ function addEdge(from, to) {
   const before = snapshot();
   const e = { id: nextId++, from, to, label: '' };
   state.edges.push(e);
+  // Die erste mit einer Spezialisierung verbundene Entity wird ihre Oberklasse
+  const fa = nodeById(from), ta = nodeById(to);
+  const isa = fa.type === 'isa' ? fa : ta.type === 'isa' ? ta : null;
+  const other = isa === fa ? ta : fa;
+  if (isa && other.type === 'entity' && !superOf(isa)) isa.superId = other.id;
   commit(before);
   select({ kind: 'edge', id: e.id });
+}
+
+function setArrow(e, arrow) {
+  const before = snapshot();
+  if (arrow) e.arrow = arrow; else delete e.arrow;
+  commit(before);
+  render();
+  renderPanel();
+}
+
+// Richtung umkehren: Start und Ziel tauschen, Pfeile und Beschriftungslage mitnehmen
+function reverseEdge(e) {
+  const before = snapshot();
+  [e.from, e.to] = [e.to, e.from];
+  if (e.arrow === 'end') e.arrow = 'start'; else if (e.arrow === 'start') e.arrow = 'end';
+  if (Number.isFinite(e.labelT)) e.labelT = Math.round((1 - e.labelT) * 1000) / 1000;
+  commit(before);
+  render();
+  renderPanel();
+}
+
+function setSuperclass(isa, entityId) {
+  const before = snapshot();
+  if (entityId == null) delete isa.superId; else isa.superId = entityId;
+  commit(before);
+  render();
+  renderPanel();
 }
 
 function deleteSelected() {
@@ -1603,8 +1739,16 @@ svg.addEventListener('pointerdown', ev => {
     if (!ids.length) { if (nodeById(id).locked) flashHint('Gesperrt – zum Verschieben erst entsperren (Rechtsklick).'); return; }
     const origin = ids.map(i => { const n = nodeById(i); return { n, x: n.x, y: n.y }; });
     const moving = new Set(ids);
-    const edgeIds = state.edges.filter(e => moving.has(e.from) || moving.has(e.to)).map(e => e.id);
-    drag = { type: 'node', primary: id, start: p, origin, edgeIds, before: snapshot(), moved: false };
+    // Spezialisierungs-Dreiecke drehen sich mit, wenn ihre Nachbarn wandern
+    const isaIds = new Set();
+    for (const i of ids) {
+      const m = nodeById(i);
+      if (m.type === 'isa') isaIds.add(i);
+      for (const nb of neighbors(m)) if (nb.type === 'isa') isaIds.add(nb.id);
+    }
+    const touched = new Set([...moving, ...isaIds]);
+    const edgeIds = state.edges.filter(e => touched.has(e.from) || touched.has(e.to)).map(e => e.id);
+    drag = { type: 'node', primary: id, start: p, origin, edgeIds, isaIds: [...isaIds], before: snapshot(), moved: false };
     svg.setPointerCapture(ev.pointerId);
     return;
   }
@@ -1744,6 +1888,7 @@ svg.addEventListener('pointermove', ev => {
     lastDown = null;
     for (const o of drag.origin) pending.nodes.add(o.n.id);
     for (const id of drag.edgeIds) pending.edges.add(id);
+    for (const id of drag.isaIds) pending.redraw.add(id);
     requestFrame();
   }
 });
@@ -1857,6 +2002,7 @@ function menuForBackground(p) {
   return [
     { label: 'Entity hier einfügen', key: 'Doppelklick', run: () => createNode('entity', p) },
     { label: 'Beziehung hier einfügen', run: () => createNode('relationship', p) },
+    { label: 'Spezialisierung (is-a) hier einfügen', run: () => createNode('isa', p) },
     { label: 'Notiz hier einfügen', run: () => createNode('note', p) },
     { label: 'Hier einsetzen', key: `${MOD}V`, disabled: !readClipboard(), run: () => pasteClipboard(p) },
     { label: 'Diagramm als Bild kopieren', key: `⇧${MOD}C`, run: copyImage },
@@ -1880,7 +2026,7 @@ function menuForBackground(p) {
 function menuForNode(n) {
   const items = [{ label: n.type === 'note' ? 'Text bearbeiten' : 'Umbenennen', key: 'Enter', run: () => startEdit('node', n.id) }];
   for (const [type] of QUICK[n.type] || []) {
-    const label = n.type === 'attribute' ? 'Teilattribut hinzufügen' : QUICK_MENU[type];
+    const label = n.type === 'attribute' ? 'Teilattribut hinzufügen' : n.type === 'isa' ? 'Unterklasse hinzufügen' : QUICK_MENU[type];
     items.push({ label, run: () => quickAdd(n.id, type) });
   }
   if (n.type === 'entity' || n.type === 'relationship') {
@@ -1888,7 +2034,7 @@ function menuForNode(n) {
     items.push({ label: 'Attribute anordnen', disabled: !has, run: () => arrangeAttributes(n.id) });
   }
   items.push('-');
-  if (n.type !== 'note') {
+  if (n.type !== 'note' && n.type !== 'isa') {
     for (const [type, label] of Object.entries(TYPES)) {
       if (type !== n.type) items.push({ label: `In ${label} umwandeln`, run: () => changeType(n, type) });
     }
@@ -1898,9 +2044,20 @@ function menuForNode(n) {
 }
 
 function menuForEdge(e) {
+  const a = nodeById(e.from), b = nodeById(e.to);
+  const isa = a.type === 'isa' ? a : b.type === 'isa' ? b : null;
+  const other = isa === a ? b : a;
   return [
     { label: 'Beschriften', key: 'Enter', run: () => startEdit('edge', e.id) },
     { label: 'Rolle benennen', run: () => startEdit('edge', e.id, 'role') },
+    '-',
+    { label: `Pfeil zu „${b.name || '?'}“`, checked: e.arrow === 'end', run: () => setArrow(e, e.arrow === 'end' ? null : 'end') },
+    { label: `Pfeil zu „${a.name || '?'}“`, checked: e.arrow === 'start', run: () => setArrow(e, e.arrow === 'start' ? null : 'start') },
+    { label: 'Pfeile an beiden Enden', checked: e.arrow === 'both', run: () => setArrow(e, e.arrow === 'both' ? null : 'both') },
+    { label: 'Richtung umkehren', run: () => reverseEdge(e) },
+    ...(isa && other.type === 'entity' && superOf(isa) !== other
+      ? [{ label: `„${other.name || '?'}“ als Oberklasse festlegen`, run: () => setSuperclass(isa, other.id) }] : []),
+    '-',
     { label: 'Totale Teilnahme', checked: Boolean(e.total), run: () => toggleFlag(e, 'total') },
     {
       label: 'Beschriftung an Standardposition', disabled: !Number.isFinite(e.labelT),
@@ -2045,7 +2202,7 @@ document.addEventListener('keydown', ev => {
     return;
   }
 
-  const tools = { v: 'select', e: 'entity', r: 'relationship', a: 'attribute', k: 'key', n: 'note', c: 'connect' };
+  const tools = { v: 'select', e: 'entity', r: 'relationship', a: 'attribute', k: 'key', g: 'isa', n: 'note', c: 'connect' };
   if (tools[key]) setTool(tools[key]);
   if (key === 'f') { if (ev.shiftKey) fitSelection(); else fit(); }
   if (key === '+' || key === '=') zoomCenter(1.2);
@@ -2069,6 +2226,7 @@ const HELP_HTML = `
       <li>Beziehung <kbd>R</kbd></li>
       <li>Attribut <kbd>A</kbd></li>
       <li>Schlüssel <kbd>K</kbd></li>
+      <li>Spezialisierung (is-a) <kbd>G</kbd></li>
       <li>Notiz <kbd>N</kbd></li>
       <li>Kante <kbd>C</kbd></li>
       <li>Umbenennen <kbd>Enter</kbd></li>
@@ -2140,7 +2298,35 @@ function renderPanel() {
   const lockHTML = `<label class="check"><input type="checkbox" data-flag="locked">
       <span>Gesperrt<small>Nicht verschieben oder löschen</small></span></label>`;
 
-  if (isNode && obj.type === 'note') {
+  if (isNode && obj.type === 'isa') {
+    const entities = neighbors(obj).filter(m => m.type === 'entity');
+    const sup = superOf(obj);
+    const choice = (prop, a, b) => `<select data-isa="${prop}">
+        <option value="">nicht angegeben</option>
+        <option value="true">${a}</option>
+        <option value="false">${b}</option>
+      </select>`;
+    panel.innerHTML = `
+      <h2>Spezialisierung (is-a)</h2>
+      ${issuesHTML(obj.id)}
+      <label class="field"><span>Oberklasse</span><select data-super>
+        <option value="">– keine –</option>
+        ${entities.map(m => `<option value="${m.id}">${escapeHTML(m.name || '?')}</option>`).join('')}
+      </select></label>
+      <label class="field"><span>Vollständigkeit</span>${choice('total', 'total – jede Instanz gehört zu einer Unterklasse', 'partiell')}</label>
+      <label class="field"><span>Überschneidung</span>${choice('disjoint', 'disjunkt – höchstens eine Unterklasse', 'überlappend')}</label>
+      <label class="field"><span>Beschriftung</span><input type="text" data-text="name" autocomplete="off" placeholder="is-a"></label>
+      <div class="field"><span>Hinzufügen</span><div class="actions"><button data-quick="entity">+ Unterklasse</button></div></div>
+      ${swatchesHTML(obj.color)}
+      ${lockHTML}
+      <div class="info">${subclassesOf(obj).length} ${subclassesOf(obj).length === 1 ? 'Unterklasse' : 'Unterklassen'}${sup ? ` von „${escapeHTML(sup.name || '?')}“` : ''}</div>
+      <button class="danger" data-action="delete">Löschen</button>`;
+    $('[data-super]', panel).value = sup ? String(sup.id) : '';
+    panel.querySelectorAll('[data-isa]').forEach(sel => {
+      const v = obj[sel.dataset.isa];
+      sel.value = v === true ? 'true' : v === false ? 'false' : '';
+    });
+  } else if (isNode && obj.type === 'note') {
     panel.innerHTML = `
       <h2>Notiz</h2>
       <label class="field"><span>Text</span><textarea data-text="name" rows="5" autocomplete="off"></textarea></label>
@@ -2176,13 +2362,20 @@ function renderPanel() {
         <button data-preset="" title="Beschriftung entfernen">✕</button>
       </div>
       <label class="field"><span>Rolle</span><input type="text" data-text="role" autocomplete="off" placeholder="z. B. Vorgesetzter (bei rekursiven Beziehungen)"></label>
+      <div class="field"><span>Pfeil</span><div class="actions">
+        <button data-arrow="" aria-pressed="${!obj.arrow}">Keiner</button>
+        <button data-arrow="end" aria-pressed="${obj.arrow === 'end'}" title="Pfeil am Ziel">→ Ziel</button>
+        <button data-arrow="start" aria-pressed="${obj.arrow === 'start'}" title="Pfeil am Start">← Start</button>
+        <button data-arrow="both" aria-pressed="${obj.arrow === 'both'}" title="Pfeile an beiden Enden">↔</button>
+        <button data-action="reverse" title="Start und Ziel tauschen">⇄ Umkehren</button>
+      </div></div>
       ${flagHTML}
       <div class="help"><p>Die Beschriftung lässt sich entlang der Kante verschieben.</p></div>
       ${Number.isFinite(obj.labelT) ? '<button class="wide" data-action="label-reset">Beschriftung an Standardposition</button>' : ''}
       <div class="info"><span data-ends></span></div>
       <button class="danger" data-action="delete">Löschen</button>`;
     const a = nodeById(obj.from), b = nodeById(obj.to);
-    $('[data-ends]', panel).textContent = `${a?.name || '?'}  —  ${b?.name || '?'}`;
+    $('[data-ends]', panel).textContent = `Start: ${a?.name || '?'}  →  Ziel: ${b?.name || '?'}`;
   }
 
   panel.querySelectorAll('[data-text]').forEach(i => { i.value = obj[i.dataset.text] || ''; });
@@ -2222,6 +2415,15 @@ panel.addEventListener('change', ev => {
   if (!obj) return;
   const t = ev.target;
   if (t.matches('[data-type]')) { changeType(obj, t.value); return; }
+  if (t.matches('[data-super]')) { setSuperclass(obj, t.value ? +t.value : null); return; }
+  if (t.matches('[data-isa]')) {
+    const before = snapshot();
+    if (t.value === '') delete obj[t.dataset.isa]; else obj[t.dataset.isa] = t.value === 'true';
+    commit(before);
+    render();
+    renderPanel();
+    return;
+  }
   if (!t.matches('[data-flag]')) return;
   const before = snapshot();
   obj[t.dataset.flag] = t.checked;
@@ -2240,6 +2442,8 @@ panel.addEventListener('click', ev => {
   if (action === 'changelog') { showChangelog(); return; }
   if (action === 'fit-selection') { fitSelection(); return; }
   if (action === 'lock') { toggleLock(); return; }
+  if (action === 'reverse') { reverseEdge(findSelected()); return; }
+  if ('arrow' in btn.dataset) { setArrow(findSelected(), btn.dataset.arrow || null); return; }
   if ('color' in btn.dataset) { setColor(btn.dataset.color); return; }
   if (action === 'duplicate') { duplicateSelection(); return; }
   if (action === 'align-h') { alignSelection('h'); return; }
@@ -2297,6 +2501,8 @@ function loadData(data) {
     .map(n => {
       const node = { ...n, x: +n.x || 0, y: +n.y || 0, name: String(n.name ?? '') };
       if (!COLORS[node.color]) delete node.color;
+      for (const f of ['total', 'disjoint']) if (node.type === 'isa' && typeof node[f] !== 'boolean') delete node[f];
+      if (node.superId != null && !Number.isFinite(node.superId)) delete node.superId;
       if (!node.locked) delete node.locked;
       return node;
     });
@@ -2306,6 +2512,7 @@ function loadData(data) {
     .map(e => {
       const edge = { ...e, label: normalizeLabel(String(e.label ?? '')) };
       if (edge.role != null) edge.role = String(edge.role);
+      if (!ARROWS.includes(edge.arrow)) delete edge.arrow;
       if (!(Number.isFinite(edge.labelT) && edge.labelT >= 0 && edge.labelT <= 1)) delete edge.labelT;
       return edge;
     });

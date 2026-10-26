@@ -2,6 +2,14 @@
 
 Wird aus `changelog.js` erzeugt (`tools/changelog.py`).
 
+## 1.4.0 – 26. Oktober 2026
+
+- Generalisierung/Spezialisierung: neues Element „is-a“ (Dreieck, Werkzeug G); die Spitze zeigt automatisch zur Oberklasse, Vollständigkeit (total/partiell) und Überschneidung (disjunkt/überlappend) einstellbar
+- „+ Spezialisierung“ an jeder Entity legt Dreieck und erste Unterklasse in einem Schritt an; „+ Unterklasse“ am Dreieck ergänzt weitere
+- Relationenmodell & SQL: Unterklassen übernehmen den Schlüssel der Oberklasse als Primär- und Fremdschlüssel, auch über mehrere Stufen
+- Pfeile an Kanten: zum Ziel, zum Start oder an beiden Enden, dazu „Richtung umkehren“ – im Panel und per Rechtsklick
+- Mac-App: Sichern bleibt nicht mehr hängen – der Inhalt wird beim Sichern nicht mehr erst aus der Oberfläche abgefragt
+
 ## 1.3.1 – 22. Oktober 2026
 
 - Min-Max-Notation schreibt „beliebig viele“ jetzt als * statt n: (0,*), (1,*); Eingaben wie 1,n oder (0,N) werden automatisch umgeschrieben

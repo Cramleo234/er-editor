@@ -22,7 +22,9 @@ Was sich in welcher Version geändert hat: [Versionsverlauf](CHANGELOG.md). Nach
 - **Beschriftbare Kanten** – frei oder per Schnellauswahl: Chen (`1`, `N`, `M`) oder Min-Max (`(0,1)`, `(1,1)`, `(0,*)`, `(1,*)`). Eingaben wie `0..1`, `1..*`, `1,n` oder `(0,N)` werden einheitlich als `(min,max)` mit `*` für „beliebig viele“ geschrieben. Kardinalitäten stehen an der Entity und lassen sich entlang der Kante verschieben.
 - Varianten: schwache Entity, identifizierende Beziehung, partieller Schlüssel, mehrwertiges und abgeleitetes Attribut, totale Teilnahme (Doppellinie)
 - **Rekursive Beziehungen** mit **Rollennamen** – zwei Kanten zur selben Entity werden als Bögen gezeichnet
-- **Relationenmodell & SQL:** Tabellen mit Primär- und Fremdschlüsseln sowie ein `CREATE TABLE`-Skript automatisch ableiten (1:1, 1:N, N:M, mehrstellige, rekursive Beziehungen, schwache Entities, mehrwertige und zusammengesetzte Attribute; Chen- und Min-Max-Notation)
+- **Generalisierung/Spezialisierung (is-a):** Dreieck mit Spitze zur Oberklasse, total/partiell und disjunkt/überlappend; `+ Spezialisierung` an einer Entity legt Dreieck und erste Unterklasse an
+- **Pfeile an Kanten** (zum Ziel, zum Start, beidseitig) und **Richtung umkehren**
+- **Relationenmodell & SQL:** Tabellen mit Primär- und Fremdschlüsseln sowie ein `CREATE TABLE`-Skript automatisch ableiten (1:1, 1:N, N:M, mehrstellige, rekursive Beziehungen, schwache Entities, Spezialisierungen, mehrwertige und zusammengesetzte Attribute; Chen- und Min-Max-Notation)
 - **Schnelleingabe:** Element auswählen, `Tab`, Attribute tippen, `Enter` legt das nächste an; `*` am Anfang = Schlüssel
 - **Als Bild kopieren** (`⇧⌘C`) – Diagramm oder Auswahl zum direkten Einfügen in andere Programme
 - **Suchen** (`⌘F`), **Übersichtskarte** und **Auf Auswahl zoomen** (`⇧F`)
@@ -54,6 +56,8 @@ Was sich in welcher Version geändert hat: [Versionsverlauf](CHANGELOG.md). Nach
 | Attribute schnell eingeben | Element auswählen, `Tab`, tippen, `Enter` für das nächste, leeres `Enter` oder `Esc` beendet |
 | Als Bild kopieren | `⇧⌘`/`⇧Strg` + `C` (bei Auswahl nur die Auswahl) |
 | Suchen | `⌘`/`Strg` + `F`, `Enter` springt zum nächsten Treffer |
+| Spezialisierung | Werkzeug **is-a** (`G`) oder `+ Spezialisierung` an einer Entity; Oberklasse im Panel |
+| Pfeil an einer Kante | Kante auswählen, im Panel **Pfeil** wählen oder Rechtsklick |
 | Notiz | Werkzeug **Notiz** (`N`), `⇧Enter` für eine neue Zeile |
 | Drucken / PDF | `⌘`/`Strg` + `P` |
 | Verschieben | Element ziehen (bei Mehrfachauswahl alle gemeinsam), Pfeiltasten zur Feinjustierung |

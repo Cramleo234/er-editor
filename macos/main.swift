@@ -63,17 +63,9 @@ final class ERDocument: NSDocument, WKScriptMessageHandler, WKUIDelegate, WKNavi
         Data((json ?? #"{"format":"er-editor","version":1,"title":"Unbenanntes Diagramm","nodes":[],"edges":[]}"#).utf8)
     }
 
-    // Vor dem Schreiben den aktuellen Stand direkt aus der Web-App holen
-    override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
-                       completionHandler: @escaping (Error?) -> Void) {
-        guard let web = webView, webReady else {
-            return super.save(to: url, ofType: typeName, for: saveOperation, completionHandler: completionHandler)
-        }
-        web.evaluateJavaScript("ERBridge.flush()") { result, _ in
-            if let text = result as? String { self.json = text }
-            super.save(to: url, ofType: typeName, for: saveOperation, completionHandler: completionHandler)
-        }
-    }
+    // Kein Warten auf JavaScript beim Sichern: macOS blockiert dabei teils den Haupt-Thread (Sichern-Dialog,
+    // Beenden mit ungesicherten Änderungen), die Antwort käme nie an und die App hinge. Der Inhalt ist ohnehin
+    // aktuell – die Web-App meldet jede Änderung sofort („changed“).
 
     private func pushContent() {
         var argument = "null"

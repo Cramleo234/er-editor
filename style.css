@@ -38,6 +38,8 @@
   --d-paper: var(--paper);
   --d-note-fill: #fff6bf;
   --d-note-stroke: #d9a400;
+  --d-isa-fill: #e3f6f3;
+  --d-isa-stroke: #1c8a7e;
 
   color-scheme: light;
 }
@@ -78,6 +80,8 @@
     --d-muted: #9aa1ad;
     --d-note-fill: #3d3510;
     --d-note-stroke: #e0b100;
+    --d-isa-fill: #0f312c;
+    --d-isa-stroke: #4fd1bf;
     color-scheme: dark;
   }
 }
@@ -117,6 +121,8 @@
   --d-muted: #9aa1ad;
   --d-note-fill: #3d3510;
   --d-note-stroke: #e0b100;
+  --d-isa-fill: #0f312c;
+  --d-isa-stroke: #4fd1bf;
   color-scheme: dark;
 }
 
